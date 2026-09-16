@@ -1,0 +1,255 @@
+#
+# Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, license: https://github.com/azerothcore/azerothcore-wotlk/blob/master/LICENSE
+#
+
+[worldserver]
+
+###################################################################################################
+# MOD INSTANCE ITEM SCALING CONFIGURATION
+###################################################################################################
+#
+#    ItemScaling.Enable
+#        Description: Enable or disable the instance item scaling module entirely.
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+
+ItemScaling.Enable = 1
+
+#
+#    ItemScaling.ScaleDungeons
+#        Description: Enable item scaling for normal 5-player instanced dungeons.
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+
+ItemScaling.ScaleDungeons = 1
+
+#
+#    ItemScaling.ScaleRaids
+#        Description: Enable item scaling for instanced raids (10-man and 25-man).
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+
+ItemScaling.ScaleRaids = 1
+
+#
+#    ItemScaling.ScaleHeroics
+#        Description: Enable item scaling for heroic dungeons and heroic raids.
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+
+ItemScaling.ScaleHeroics = 1
+
+#
+#    ItemScaling.ScaleChests
+#        Description: Enable scaling for instanced chests and gameobject loot.
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+
+ItemScaling.ScaleChests = 1
+
+#
+#    ItemScaling.LevelScaling.Method
+#        Description: Method used to calculate the target effective scaling level.
+#                     "dynamic" - Scales relative to instance hierarchy (boss > elite > trash).
+#                     "fixed"   - Scales directly to the highest real player level (H).
+#        Default:     "dynamic"
+#
+
+ItemScaling.LevelScaling.Method = "dynamic"
+
+#
+#    ItemScaling.MinLevel
+#        Description: Minimum level for item scaling to activate.
+#                     If the highest real player level or instance tier is below this,
+#                     items will drop with their default original stats.
+#        Default:     1
+#        Range:       1 - 80
+#
+
+ItemScaling.MinLevel = 1
+
+#
+#    ItemScaling.MaxLevel
+#        Description: Maximum level for item scaling to activate.
+#                     If the highest real player level or instance tier exceeds this,
+#                     items will drop with their default original stats.
+#                     For example, setting MaxLevel = 79 excludes level 80 players
+#                     and level 80 instances/items so they remain default.
+#        Default:     80
+#        Range:       1 - 80
+#
+
+ItemScaling.MaxLevel = 80
+
+#
+#    ItemScaling.ExcludedLevels
+#        Description: Comma-separated list of player levels and content tiers excluded from item
+#                     scaling. When players or content match an excluded level, item scaling is
+#                     completely bypassed and items drop with their default original stats.
+#                     By default, 60, 70, and 80 (expansion milestone caps) are excluded so that
+#                     classic Vanilla (60), TBC (70), and WotLK (80) endgame loot remains 100% default.
+#        Default:     "60, 70, 80"
+#
+
+ItemScaling.ExcludedLevels = "60, 70, 80"
+
+#
+#    ItemScaling.RealPlayersOnly
+#        Description: Only eligible REAL players are counted when determining the highest level (H).
+#                     Playerbots are strictly excluded from determining target level.
+#        Default:     1 - Enabled (Bots never dictate scaling target)
+#                     0 - Disabled (Bots also count towards H)
+#
+
+ItemScaling.RealPlayersOnly = 1
+
+#
+#    ItemScaling.IncludeGameMasters
+#        Description: Whether GM characters (.gm on) in the instance affect the highest real player level.
+#        Default:     0 - GMs do not affect scaling target
+#                     1 - GMs affect scaling target
+#
+
+ItemScaling.IncludeGameMasters = 1
+
+#
+#    ItemScaling.ScaleUp
+#        Description: Allow scaling low-level instance items upwards to a higher player level.
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+
+ItemScaling.ScaleUp = 1
+
+#
+#    ItemScaling.ScaleDown
+#        Description: Allow scaling high-level instance items downwards to a lower player level.
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+
+ItemScaling.ScaleDown = 1
+
+#
+#    ItemScaling.ScaleExistingScalingItems
+#        Description: Scale items that already have native Blizzard heirloom/scaling distributions
+#                     (ScalingStatDistribution / ScalingStatValue).
+#        Default:     0 - Disabled (Native heirlooms are excluded to prevent double-scaling)
+#                     1 - Enabled
+#
+
+ItemScaling.ScaleExistingScalingItems = 0
+
+#
+#    Rarity / Quality Filters
+#        Description: Controls which item qualities are eligible for scaling.
+#                     ScalePoor      (Gray)
+#                     ScaleCommon    (White)
+#                     ScaleUncommon  (Green)
+#                     ScaleRare      (Blue)
+#                     ScaleEpic      (Purple)
+#                     ScaleLegendary (Orange)
+#                     ScaleArtifact  (Artifact)
+#                     ScaleHeirloom  (Heirloom)
+#        Default:     Poor=1, Common=1, Uncommon=1, Rare=1, Epic=1, Legendary=1, Artifact=1, Heirloom=0
+#
+
+ItemScaling.ScalePoor = 1
+ItemScaling.ScaleCommon = 1
+ItemScaling.ScaleUncommon = 1
+ItemScaling.ScaleRare = 1
+ItemScaling.ScaleEpic = 1
+ItemScaling.ScaleLegendary = 1
+ItemScaling.ScaleArtifact = 1
+ItemScaling.ScaleHeirloom = 0
+
+#
+#    ItemScaling.PreserveNonZeroStats
+#        Description: Prevents non-zero stats from vanishing purely due to rounding to 0 at low levels.
+#                     If an item originally has +5 Haste, scaled version will have at least +1 Haste.
+#        Default:     1 - Enabled
+#                     0 - Disabled (allow rounding to 0)
+#
+
+ItemScaling.PreserveNonZeroStats = 1
+
+#
+#    ItemScaling.RequiredLevel.Policy
+#        Description: Determines how RequiredLevel is assigned to scaled variants:
+#                     "target-capped-player" - min(L_target, H) clamped to 1..80
+#                     "player"               - exactly H
+#                     "target"               - exactly L_target
+#        Default:     "target-capped-player"
+#
+
+ItemScaling.RequiredLevel.Policy = "target-capped-player"
+
+#
+#    Dynamic Scaling Floor and Ceiling
+#        Description: In dynamic mode, controls how many levels below and above the highest real player (H)
+#                     a creature's effective level is allowed to scale.
+#                     Floor:   levels below H (e.g. 5 means trash scales down to at most H - 5)
+#                     Ceiling: levels above H (e.g. 3 means boss scales up to at most H + 3)
+#
+
+ItemScaling.Dynamic.Floor.Dungeons = 5
+ItemScaling.Dynamic.Ceiling.Dungeons = 3
+ItemScaling.Dynamic.Floor.Raids = 5
+ItemScaling.Dynamic.Ceiling.Raids = 3
+
+#
+#    ItemScaling.UseAutoBalanceSettings
+#        Description: If mod-autobalance is loaded, automatically adopt its configured LevelScaling.Method,
+#                     Dynamic.Floor, and Dynamic.Ceiling settings for instance types.
+#        Default:     1 - Enabled
+#                     0 - Disabled (use ItemScaling.* config values exclusively)
+#
+
+ItemScaling.UseAutoBalanceSettings = 1
+
+#
+#    ItemScaling.SyntheticEntry.Start
+#        Description: Starting item entry for dynamically allocated synthetic item templates.
+#                     Must be outside normal WotLK DBC/world database item ID ranges.
+#        Default:     10000000 (10 Million)
+#
+
+ItemScaling.SyntheticEntry.Start = 10000000
+
+#
+#    ItemScaling.FormulaVersion
+#        Description: Version tag for the scaling curve calculation. Preserved in database records.
+#        Default:     1
+#
+
+ItemScaling.FormulaVersion = 1
+
+#
+#    ItemScaling.ExcludedMapIds
+#        Description: Comma-separated list of Map IDs excluded from item scaling.
+#        Default:     ""
+#
+
+ItemScaling.ExcludedMapIds = ""
+
+#
+#    ItemScaling.ExcludedItemIds
+#        Description: Comma-separated list of base Item IDs excluded from item scaling.
+#        Default:     ""
+#
+
+ItemScaling.ExcludedItemIds = ""
+
+#
+#    ItemScaling.Debug
+#        Description: Enable verbose debug logging for item scaling calculations.
+#        Default:     0 - Disabled
+#                     1 - Enabled
+#
+
+ItemScaling.Debug = 0
