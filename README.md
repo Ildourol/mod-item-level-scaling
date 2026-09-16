@@ -12,7 +12,7 @@
 
 ---
 
-## 📖 Description
+## Description
 
 **mod-item-level-scaling** is a high-performance AzerothCore C++ module that dynamically scales equippable combat loot dropped inside instanced dungeons and raids to match real player progression.
 
@@ -20,33 +20,33 @@ Designed for level-scaling servers, solo-play, and dungeon-leveling experiences 
 
 ---
 
-## ✨ Features
+## Features
 
-- 🛡️ **Real Player Authority**: Target scaling levels ($H$) are determined exclusively by the highest-level **real** player inside the instance. Playerbots never unintentionally inflate or skew item scaling targets.
-- ⚖️ **Dynamic & Fixed Scaling Modes**:
+- **Real Player Authority**: Target scaling levels ($H$) are determined exclusively by the highest-level **real** player inside the instance. Playerbots never unintentionally inflate or skew item scaling targets.
+- **Dynamic & Fixed Scaling Modes**:
   - **Dynamic Mode**: Retains authentic dungeon hierarchy ($Trash < Elite < Boss$) relative to $H$ using customizable level floors and ceilings.
   - **Fixed Mode**: Pinpoints the highest real player level $H$ directly.
-- 📊 **Blizzard Data-Driven ItemLevel Model**: Calculates target `ItemLevel` from stock Blizzard equipment medians $M(\text{Level}, \text{Quality}, \text{SlotFamily})$, ensuring boss and raid tier gear remains superior without carrying endgame stat inflation into low-level brackets.
-- 📈 **Native DBC Growth Curves**:
+- **Blizzard Data-Driven ItemLevel Model**: Calculates target `ItemLevel` from stock Blizzard equipment medians $M(\text{Level}, \text{Quality}, \text{SlotFamily})$, ensuring boss and raid tier gear remains superior without carrying endgame stat inflation into low-level brackets.
+- **Native DBC Growth Curves**:
   - Leverages `RandomPropertiesPoints.dbc` point budget tables across all qualities (Uncommon, Rare, Epic) and all 5 inventory slot families to accurately rescale primary stats, ratings, armor, block value, and resistances.
   - Employs `ScalingStatValues.dbc` DPS curves for weapon damage while keeping weapon delay (speed) and damage spread intact.
-- 💎 **Exhaustive Stat Scaling**:
+- **Exhaustive Stat Scaling**:
   - Primary Stats: Strength, Agility, Stamina, Intellect, Spirit
   - Melee/Ranged Ratings: Attack Power, Ranged AP, Crit, Hit, Haste, Expertise, Armor Penetration
   - Spell Ratings: Spell Power, Spell Hit, Spell Crit, Spell Haste, Spell Penetration, MP5
   - Defensive Ratings: Defense, Dodge, Parry, Shield Block Rating, Shield Block Value, Health Regen
-- 🔄 **Persistent Synthetic Templates**:
+- **Persistent Synthetic Templates**:
   - Generates custom item templates and stores them in the `scaled_item_variant` table.
   - Items survive server restarts, logouts, mail, guild bank, auction house, and player trades.
   - Tooltip stats match equipped stats with 100% fidelity without client-side patch requirements.
-- 🛡️ **Zero Global Mutation**:
+- **Zero Global Mutation**:
   - Base `ItemTemplate` entries are never mutated. Vendor gear, quest rewards, world drops, and items owned by other players remain completely unaffected.
-- 🤖 **Broad Compatibility**:
+- **Broad Compatibility**:
   - Fully tested and compatible with `mod-playerbots` (rolling and auto-equip gear evaluation) and `mod-autobalance`.
 
 ---
 
-## 📂 Repository Structure
+## Repository Structure
 
 ```
 mod-item-level-scaling/
@@ -79,7 +79,7 @@ mod-item-level-scaling/
 
 ---
 
-## 🚀 Installation
+## Installation
 
 1. Navigate to your AzerothCore modules folder and clone this repository:
    ```bash
@@ -110,7 +110,7 @@ mod-item-level-scaling/
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 Detailed configuration options are documented in `conf/mod_item_level_scaling.conf.dist`. Key settings include:
 
@@ -127,7 +127,7 @@ Detailed configuration options are documented in `conf/mod_item_level_scaling.co
 
 ---
 
-## 🤝 Compatibility & Requirements
+## Compatibility and Requirements
 
 - **AzerothCore WotLK (branch `master`)** (commit supported: latest)
 - **Client**: World of Warcraft: Wrath of the Lich King (3.3.5a - Build 12340)
@@ -137,6 +137,6 @@ Detailed configuration options are documented in `conf/mod_item_level_scaling.co
 
 ---
 
-## 📜 License
+## License
 
 This module is released under the GNU General Public License v2 (or at your option any later version) in accordance with AzerothCore licensing.
