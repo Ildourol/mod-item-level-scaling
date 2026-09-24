@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 #include <sstream>
+#include <unordered_set>
 
 ItemScalingRegistry* ItemScalingRegistry::instance()
 {
@@ -54,7 +55,7 @@ void ItemScalingRegistry::ResolveSyntheticEntryRange()
         if (varMin > 0)
         {
             startEntry = varMin;
-            _nextSyntheticEntry.store(varMax + 1);
+            _nextSyntheticEntry.store(std::max(varMax + 1, dbMax + 1));
         }
         else
         {
@@ -266,24 +267,50 @@ void ItemScalingRegistry::PreStageDungeonLoot()
 
     LOG_INFO("server.loading", ">> ItemScaling: Pre-staging scalable dungeon and raid loot variants into database...");
 
-    WorldDatabase.DirectExecute("CREATE TEMPORARY TABLE IF NOT EXISTS temp_ils_loot (loot_id INT UNSIGNED PRIMARY KEY); TRUNCATE TABLE temp_ils_loot;");
-    WorldDatabase.DirectExecute("INSERT IGNORE INTO temp_ils_loot SELECT DISTINCT CASE WHEN ct.lootid > 0 THEN ct.lootid ELSE ct.entry END FROM creature cr JOIN instance_template inst ON cr.map = inst.map JOIN creature_template ct ON cr.id = ct.entry;");
-    WorldDatabase.DirectExecute("INSERT IGNORE INTO temp_ils_loot SELECT DISTINCT gt.Data1 FROM gameobject go JOIN instance_template inst ON go.map = inst.map JOIN gameobject_template gt ON go.id = gt.entry WHERE gt.type = 3 AND gt.Data1 > 0;");
-    WorldDatabase.DirectExecute("CREATE TEMPORARY TABLE IF NOT EXISTS temp_ils_items (item_id INT UNSIGNED PRIMARY KEY); TRUNCATE TABLE temp_ils_items;");
-    WorldDatabase.DirectExecute("INSERT IGNORE INTO temp_ils_items SELECT DISTINCT Item FROM creature_loot_template c JOIN temp_ils_loot t ON c.Entry = t.loot_id WHERE c.Reference = 0 AND c.Item > 0;");
-    WorldDatabase.DirectExecute("INSERT IGNORE INTO temp_ils_items SELECT DISTINCT r.Item FROM creature_loot_template c JOIN temp_ils_loot t ON c.Entry = t.loot_id JOIN reference_loot_template r ON c.Reference = r.Entry WHERE c.Reference > 0 AND r.Item > 0;");
-    WorldDatabase.DirectExecute("INSERT IGNORE INTO temp_ils_items SELECT DISTINCT Item FROM gameobject_loot_template g JOIN temp_ils_loot t ON g.Entry = t.loot_id WHERE g.Reference = 0 AND g.Item > 0;");
-    WorldDatabase.DirectExecute("INSERT IGNORE INTO temp_ils_items SELECT DISTINCT r.Item FROM gameobject_loot_template g JOIN temp_ils_loot t ON g.Entry = t.loot_id JOIN reference_loot_template r ON g.Reference = r.Entry WHERE g.Reference > 0 AND r.Item > 0;");
-
+    // Keep discovery in one SQL statement. AzerothCore's synchronous database pool may use a different
+    // connection for each call, so connection-scoped TEMPORARY TABLE state is not safe across calls.
     std::string lootQuery = Acore::StringFormat(
-        "SELECT it.entry, it.class, it.subclass, it.Quality, it.InventoryType, it.ItemLevel, it.RequiredLevel, "
-        "       it.stat_type1, it.stat_value1, it.stat_type2, it.stat_value2, it.stat_type3, it.stat_value3, it.stat_type4, it.stat_value4, it.stat_type5, it.stat_value5, "
-        "       it.stat_type6, it.stat_value6, it.stat_type7, it.stat_value7, it.stat_type8, it.stat_value8, it.stat_type9, it.stat_value9, it.stat_type10, it.stat_value10, "
-        "       it.dmg_min1, it.dmg_max1, it.dmg_type1, it.dmg_min2, it.dmg_max2, it.dmg_type2, it.armor, it.delay "
+        "SELECT DISTINCT it.entry, it.class, it.subclass, it.Quality, it.InventoryType, it.ItemLevel, "
+        "       it.RequiredLevel, it.stat_type1, it.stat_value1, it.stat_type2, it.stat_value2, "
+        "       it.stat_type3, it.stat_value3, it.stat_type4, it.stat_value4, it.stat_type5, "
+        "       it.stat_value5, it.stat_type6, it.stat_value6, it.stat_type7, it.stat_value7, "
+        "       it.stat_type8, it.stat_value8, it.stat_type9, it.stat_value9, it.stat_type10, "
+        "       it.stat_value10, it.dmg_min1, it.dmg_max1, it.dmg_type1, it.dmg_min2, it.dmg_max2, "
+        "       it.dmg_type2, it.armor, it.delay "
         "FROM item_template it "
-        "JOIN temp_ils_items ti ON it.entry = ti.item_id "
+        "JOIN ("
+        "    SELECT CASE WHEN clt.Reference > 0 THEN r.Item ELSE clt.Item END AS item_id "
+        "    FROM creature_loot_template clt "
+        "    JOIN ("
+        "        SELECT DISTINCT ct.lootid AS loot_id "
+        "        FROM creature cr "
+        "        JOIN instance_template inst ON inst.map = cr.map "
+        "        JOIN creature_template base_ct ON base_ct.entry = cr.id "
+        "        JOIN creature_template ct ON ct.entry IN ("
+        "            base_ct.entry, base_ct.difficulty_entry_1, base_ct.difficulty_entry_2, "
+        "            base_ct.difficulty_entry_3"
+        "        ) "
+        "        WHERE ct.lootid > 0"
+        "    ) creature_loot ON creature_loot.loot_id = clt.Entry "
+        "    LEFT JOIN reference_loot_template r ON clt.Reference > 0 AND r.Entry = clt.Reference "
+        "    WHERE (clt.Reference = 0 AND clt.Item > 0) "
+        "       OR (clt.Reference > 0 AND r.Item > 0) "
+        "    UNION "
+        "    SELECT CASE WHEN glt.Reference > 0 THEN r.Item ELSE glt.Item END AS item_id "
+        "    FROM gameobject_loot_template glt "
+        "    JOIN ("
+        "        SELECT DISTINCT gt.Data1 AS loot_id "
+        "        FROM gameobject go "
+        "        JOIN instance_template inst ON inst.map = go.map "
+        "        JOIN gameobject_template gt ON gt.entry = go.id "
+        "        WHERE gt.type IN (3, 25) AND gt.Data1 > 0"
+        "    ) gameobject_loot ON gameobject_loot.loot_id = glt.Entry "
+        "    LEFT JOIN reference_loot_template r ON glt.Reference > 0 AND r.Entry = glt.Reference "
+        "    WHERE (glt.Reference = 0 AND glt.Item > 0) "
+        "       OR (glt.Reference > 0 AND r.Item > 0)"
+        ") instance_loot ON instance_loot.item_id = it.entry "
         "WHERE it.class IN (2, 4) AND it.InventoryType NOT IN (0, 24, 27, 28) "
-        "AND it.entry < {} ",
+        "AND it.entry < {}",
         sItemScalingConfig->SyntheticEntryStart
     );
 
@@ -298,6 +325,28 @@ void ItemScalingRegistry::PreStageDungeonLoot()
     if (step < 1)
     {
         step = 2;
+    }
+
+    std::unordered_set<uint64> existingVariantKeys;
+    QueryResult existingVariants = WorldDatabase.Query(
+        "SELECT base_entry, target_effective_level, target_item_level, formula_version "
+        "FROM scaled_item_variant WHERE formula_version = {}",
+        sItemScalingConfig->FormulaVersion
+    );
+
+    if (existingVariants)
+    {
+        existingVariantKeys.reserve(existingVariants->GetRowCount());
+        do
+        {
+            Field* fields = existingVariants->Fetch();
+            existingVariantKeys.insert(PackVariantKey(
+                fields[0].Get<uint32>(),
+                fields[1].Get<uint8>(),
+                fields[2].Get<uint16>(),
+                fields[3].Get<uint8>()
+            ));
+        } while (existingVariants->NextRow());
     }
 
     WorldDatabaseTransaction trans = WorldDatabase.BeginTransaction();
@@ -361,14 +410,23 @@ void ItemScalingRegistry::PreStageDungeonLoot()
 
         for (uint8 targetLvl = minLevel; targetLvl <= sItemScalingConfig->MaxLevel; targetLvl += step)
         {
-
             uint16 targetIlvl = sItemScalingBaseline->CalculateTargetItemLevel(&baseProto, targetLvl, origRefLevel);
             if (targetIlvl == 0 || (targetIlvl == baseProto.ItemLevel && targetLvl == origRefLevel))
             {
                 continue;
             }
 
+            uint64 variantKey = PackVariantKey(
+                baseProto.ItemId,
+                targetLvl,
+                targetIlvl,
+                sItemScalingConfig->FormulaVersion
+            );
+            if (existingVariantKeys.find(variantKey) != existingVariantKeys.end())
+                continue;
+
             uint32 newEntry = _nextSyntheticEntry.fetch_add(1);
+            existingVariantKeys.insert(variantKey);
 
             ItemTemplate scaledProto = ItemScalingFormula::CreateScaledTemplate(
                 &baseProto,
@@ -380,7 +438,13 @@ void ItemScalingRegistry::PreStageDungeonLoot()
             );
 
             trans->Append(BuildItemTemplateInsertSQL(scaledProto, baseProto.ItemId));
-            trans->Append(BuildVariantInsertSQL(newEntry, baseProto.ItemId, targetLvl, targetIlvl, sItemScalingConfig->FormulaVersion));
+            trans->Append(BuildVariantInsertSQL(
+                newEntry,
+                baseProto.ItemId,
+                targetLvl,
+                targetIlvl,
+                sItemScalingConfig->FormulaVersion
+            ));
             batchOps += 2;
             ++createdCount;
 
@@ -391,7 +455,6 @@ void ItemScalingRegistry::PreStageDungeonLoot()
                 batchOps = 0;
             }
         }
-
     } while (lootItemsRes->NextRow());
 
     if (batchOps > 0)
@@ -399,7 +462,11 @@ void ItemScalingRegistry::PreStageDungeonLoot()
         WorldDatabase.DirectCommitTransaction(trans);
     }
 
-    LOG_INFO("server.loading", ">> ItemScaling: Pre-staged {} synthetic item variants across instance loot tables.", createdCount);
+    LOG_INFO(
+        "server.loading",
+        ">> ItemScaling: Pre-staged {} synthetic item variants across instance loot tables.",
+        createdCount
+    );
 }
 
 void ItemScalingRegistry::OnLoadCustomDatabaseTable()
