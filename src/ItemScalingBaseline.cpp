@@ -5,6 +5,8 @@
 #include "ItemScalingBaseline.h"
 #include "ItemScalingConfig.h"
 #include "ItemScalingFormula.h"
+#include "DatabaseEnv.h"
+#include "QueryResult.h"
 #include "Log.h"
 #include "ObjectMgr.h"
 #include <algorithm>
@@ -24,63 +26,80 @@ void ItemScalingBaseline::BuildBaseline()
     }
 
     ItemTemplateContainer const* itemTemplates = sObjectMgr->GetItemTemplateStore();
-    if (!itemTemplates)
-    {
-        LOG_ERROR("module.ItemScaling", "ItemScalingBaseline::BuildBaseline: ItemTemplateStore is null!");
-        return;
-    }
+    bool useStore = (itemTemplates && !itemTemplates->empty());
 
     // Temporary collector: [level][quality][family] -> list of item levels
     std::vector<uint32> buckets[MAX_BASELINE_LEVEL + 1][MAX_BASELINE_QUALITY][MAX_BASELINE_FAMILY];
-
     uint32 totalProcessed = 0;
+    uint32 maxCutoff = sItemScalingConfig->SyntheticEntryStart > 0 ? sItemScalingConfig->SyntheticEntryStart : 60000;
 
-    for (auto const& pair : *itemTemplates)
+    if (useStore)
     {
-        ItemTemplate const& proto = pair.second;
-
-        // Exclude synthetic variants
-        if (proto.ItemId >= sItemScalingConfig->SyntheticEntryStart)
+        for (auto const& pair : *itemTemplates)
         {
-            continue;
-        }
+            ItemTemplate const& proto = pair.second;
 
-        // Only consider equippable combat equipment
-        if (proto.Class != ITEM_CLASS_WEAPON && proto.Class != ITEM_CLASS_ARMOR)
+            if (proto.ItemId >= maxCutoff)
+                continue;
+
+            if (proto.Class != ITEM_CLASS_WEAPON && proto.Class != ITEM_CLASS_ARMOR)
+                continue;
+
+            int8 family = ItemScalingFormula::GetSlotFamily(proto.InventoryType);
+            if (family < 0 || family >= MAX_BASELINE_FAMILY)
+                continue;
+
+            if (proto.ScalingStatDistribution != 0 || proto.ScalingStatValue != 0)
+                continue;
+
+            if (proto.Quality >= MAX_BASELINE_QUALITY)
+                continue;
+
+            uint8 lvl = static_cast<uint8>(proto.RequiredLevel);
+            if (lvl == 0 || lvl > MAX_BASELINE_LEVEL)
+                continue;
+
+            if (proto.ItemLevel == 0)
+                continue;
+
+            buckets[lvl][proto.Quality][family].push_back(proto.ItemLevel);
+            ++totalProcessed;
+        }
+    }
+    else
+    {
+        QueryResult result = WorldDatabase.Query(
+            "SELECT entry, class, Quality, RequiredLevel, ItemLevel, InventoryType, ScalingStatDistribution, ScalingStatValue "
+            "FROM item_template WHERE class IN (2, 4) AND RequiredLevel BETWEEN 1 AND 80 AND ItemLevel > 0 AND entry < {}",
+            maxCutoff
+        );
+
+        if (result)
         {
-            continue;
-        }
+            do
+            {
+                Field* f = result->Fetch();
+                uint32 quality = f[2].Get<uint32>();
+                uint8 lvl = f[3].Get<uint8>();
+                uint32 ilvl = f[4].Get<uint32>();
+                uint32 invType = f[5].Get<uint32>();
+                uint32 ssd = f[6].Get<uint32>();
+                uint32 ssv = f[7].Get<uint32>();
 
-        int8 family = ItemScalingFormula::GetSlotFamily(proto.InventoryType);
-        if (family < 0 || family >= MAX_BASELINE_FAMILY)
-        {
-            continue;
-        }
+                if (ssd != 0 || ssv != 0)
+                    continue;
 
-        // Exclude native heirlooms
-        if (proto.ScalingStatDistribution != 0 || proto.ScalingStatValue != 0)
-        {
-            continue;
-        }
+                int8 family = ItemScalingFormula::GetSlotFamily(invType);
+                if (family < 0 || family >= MAX_BASELINE_FAMILY)
+                    continue;
 
-        if (proto.Quality >= MAX_BASELINE_QUALITY)
-        {
-            continue;
-        }
+                if (quality >= MAX_BASELINE_QUALITY || lvl == 0 || lvl > MAX_BASELINE_LEVEL)
+                    continue;
 
-        uint8 lvl = static_cast<uint8>(proto.RequiredLevel);
-        if (lvl == 0 || lvl > MAX_BASELINE_LEVEL)
-        {
-            continue;
+                buckets[lvl][quality][family].push_back(ilvl);
+                ++totalProcessed;
+            } while (result->NextRow());
         }
-
-        if (proto.ItemLevel == 0)
-        {
-            continue;
-        }
-
-        buckets[lvl][proto.Quality][family].push_back(proto.ItemLevel);
-        ++totalProcessed;
     }
 
     // Calculate medians for populated buckets

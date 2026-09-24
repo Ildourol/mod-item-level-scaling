@@ -13,6 +13,7 @@ public:
     ItemScalingWorldScript();
 
     void OnStartup() override;
+    void OnLoadCustomDatabaseTable() override;
     void OnAfterConfigLoad(bool reload) override;
 };
 

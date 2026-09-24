@@ -11,9 +11,22 @@
 ItemScalingWorldScript::ItemScalingWorldScript()
     : WorldScript("ItemScalingWorldScript", {
         WORLDHOOK_ON_STARTUP,
+        WORLDHOOK_ON_LOAD_CUSTOM_DATABASE_TABLE,
         WORLDHOOK_ON_AFTER_CONFIG_LOAD
     })
 {
+}
+
+void ItemScalingWorldScript::OnLoadCustomDatabaseTable()
+{
+    sItemScalingConfig->Load();
+
+    if (!sItemScalingConfig->Enable)
+    {
+        return;
+    }
+
+    sItemScalingRegistry->OnLoadCustomDatabaseTable();
 }
 
 void ItemScalingWorldScript::OnStartup()

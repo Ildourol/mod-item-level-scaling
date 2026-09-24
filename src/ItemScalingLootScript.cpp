@@ -323,13 +323,12 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
             continue;
         }
 
-        // Obtain or lazily create synthetic variant template
-        uint32 variantEntry = sItemScalingRegistry->GetOrCreateVariant(
-            baseProto,
+        // Obtain pre-staged or persisted synthetic variant template (zero DB writes, zero map lag)
+        uint32 variantEntry = sItemScalingRegistry->GetVariantEntry(
+            baseProto->ItemId,
             lTarget,
             targetIlvl,
-            sItemScalingConfig->FormulaVersion,
-            highestRealPlayerLevel
+            sItemScalingConfig->FormulaVersion
         );
 
         if (variantEntry != 0 && variantEntry != item.itemid)

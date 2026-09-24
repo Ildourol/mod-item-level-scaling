@@ -83,7 +83,29 @@ void ItemScalingConfig::Load()
     DynamicCeilingRaids = static_cast<uint8>(sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Raids", 3));
 
     UseAutoBalanceSettings = sConfigMgr->GetOption<bool>("ItemScaling.UseAutoBalanceSettings", true);
-    SyntheticEntryStart = sConfigMgr->GetOption<uint32>("ItemScaling.SyntheticEntry.Start", 10000000);
+
+    std::string syntheticStartStr = sConfigMgr->GetOption<std::string>("ItemScaling.SyntheticEntry.Start", "auto");
+    if (syntheticStartStr == "auto" || syntheticStartStr == "0")
+    {
+        AutoSyntheticEntry = true;
+        SyntheticEntryStart = 0;
+    }
+    else
+    {
+        AutoSyntheticEntry = false;
+        if (Optional<uint32> val = Acore::StringTo<uint32>(syntheticStartStr))
+        {
+            SyntheticEntryStart = *val;
+        }
+        else
+        {
+            SyntheticEntryStart = 60000;
+        }
+    }
+
+    SyntheticEntryAutoOffset = sConfigMgr->GetOption<uint32>("ItemScaling.SyntheticEntry.AutoOffset", 1000);
+    PreStageDungeonLoot = sConfigMgr->GetOption<bool>("ItemScaling.PreStageDungeonLoot", true);
+    BracketStep = static_cast<uint8>(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("ItemScaling.BracketStep", 2), 1, 10));
     FormulaVersion = static_cast<uint8>(sConfigMgr->GetOption<uint32>("ItemScaling.FormulaVersion", 1));
 
     ExcludedLevels.clear();

@@ -48,7 +48,11 @@ public:
     uint8 DynamicCeilingRaids{3};
 
     bool UseAutoBalanceSettings{true};
-    uint32 SyntheticEntryStart{10000000};
+    bool AutoSyntheticEntry{true};
+    uint32 SyntheticEntryStart{60000};
+    uint32 SyntheticEntryAutoOffset{1000};
+    bool PreStageDungeonLoot{true};
+    uint8 BracketStep{2};
     uint8 FormulaVersion{1};
 
     std::unordered_set<uint8> ExcludedLevels;

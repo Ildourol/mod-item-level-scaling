@@ -215,11 +215,45 @@ ItemScaling.UseAutoBalanceSettings = 1
 #
 #    ItemScaling.SyntheticEntry.Start
 #        Description: Starting item entry for dynamically allocated synthetic item templates.
-#                     Must be outside normal WotLK DBC/world database item ID ranges.
-#        Default:     10000000 (10 Million)
+#                     Can be set to "auto" to automatically pick the lowest safe compact range
+#                     immediately above the maximum existing item ID in the database (e.g. ~60,000),
+#                     reducing memory footprint from 80+ MB down to < 650 KB.
+#                     Or specify a custom fixed starting ID.
+#        Default:     "auto"
 #
 
-ItemScaling.SyntheticEntry.Start = 10000000
+ItemScaling.SyntheticEntry.Start = "auto"
+
+#
+#    ItemScaling.SyntheticEntry.AutoOffset
+#        Description: Buffer space to leave between the highest database item entry and the
+#                     start of synthetic scaled items when SyntheticEntry.Start is set to "auto".
+#        Default:     1000
+#
+
+ItemScaling.SyntheticEntry.AutoOffset = 1000
+
+#
+#    ItemScaling.PreStageDungeonLoot
+#        Description: Pre-generate and synchronize scalable dungeon/raid equipment variants into
+#                     item_template at server startup. Completely eliminates runtime database writes,
+#                     lock contention, and combat stuttering during loot drops.
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+
+ItemScaling.PreStageDungeonLoot = 1
+
+#
+#    ItemScaling.BracketStep
+#        Description: Level interval between pre-staged scaling tiers (e.g. 2 means tiers at
+#                     every 2 levels). Lower values provide finer granularity; higher values
+#                     use fewer database rows.
+#        Default:     2
+#        Range:       1 - 10
+#
+
+ItemScaling.BracketStep = 2
 
 #
 #    ItemScaling.FormulaVersion
