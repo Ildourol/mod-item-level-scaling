@@ -25,7 +25,7 @@ public:
     uint8 MinLevel{1};
     uint8 MaxLevel{80};
     bool RealPlayersOnly{true};
-    bool IncludeGameMasters{false};
+    bool IncludeGameMasters{true};
     bool ScaleUp{true};
     bool ScaleDown{true};
     bool ScaleExistingScalingItems{false};
@@ -51,7 +51,7 @@ public:
     bool AutoSyntheticEntry{true};
     uint32 SyntheticEntryStart{60000};
     uint32 SyntheticEntryAutoOffset{1000};
-    bool PreStageDungeonLoot{true};
+    bool PreStageDungeonLoot{false};
     uint8 BracketStep{2};
     uint8 FormulaVersion{1};
 

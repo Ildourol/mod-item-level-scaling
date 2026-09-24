@@ -88,15 +88,16 @@ ItemScaling.MaxLevel = 80
 
 #
 #    ItemScaling.ExcludedLevels
-#        Description: Comma-separated list of player levels and content tiers excluded from item
-#                     scaling. When players or content match an excluded level, item scaling is
-#                     completely bypassed and items drop with their default original stats.
-#                     By default, 60, 70, and 80 (expansion milestone caps) are excluded so that
-#                     classic Vanilla (60), TBC (70), and WotLK (80) endgame loot remains 100% default.
-#        Default:     "60, 70, 80"
+#        Description: Comma-separated list of item native levels explicitly excluded from item scaling.
+#                     Note: Items where native level matches target level (e.g., native 80 to 80,
+#                     native 70 to 70, native 60 to 60) are already automatically bypassed without
+#                     scaling, preserving original Blizzard drops.
+#                     Leaving this empty ("") ensures lower-level drops (e.g., Molten Core level 60
+#                     items) will properly scale up to level 80 for level 80 players.
+#        Default:     ""
 #
 
-ItemScaling.ExcludedLevels = "60, 70, 80"
+ItemScaling.ExcludedLevels = ""
 
 #
 #    ItemScaling.RealPlayersOnly
@@ -206,11 +207,11 @@ ItemScaling.Dynamic.Ceiling.Raids = 3
 #    ItemScaling.UseAutoBalanceSettings
 #        Description: If mod-autobalance is loaded, automatically adopt its configured LevelScaling.Method,
 #                     Dynamic.Floor, and Dynamic.Ceiling settings for instance types.
-#        Default:     1 - Enabled
-#                     0 - Disabled (use ItemScaling.* config values exclusively)
+#        Default:     0 - Disabled (use ItemScaling.* config values exclusively)
+#                     1 - Enabled
 #
 
-ItemScaling.UseAutoBalanceSettings = 1
+ItemScaling.UseAutoBalanceSettings = 0
 
 #
 #    ItemScaling.SyntheticEntry.Start
@@ -236,13 +237,12 @@ ItemScaling.SyntheticEntry.AutoOffset = 1000
 #
 #    ItemScaling.PreStageDungeonLoot
 #        Description: Pre-generate and synchronize scalable dungeon/raid equipment variants into
-#                     item_template at server startup. Completely eliminates runtime database writes,
-#                     lock contention, and combat stuttering during loot drops.
-#        Default:     1 - Enabled
-#                     0 - Disabled
+#                     item_template at server startup. With on-demand scaling enabled, this is optional.
+#        Default:     0 - Disabled (on-demand scaling creates variants dynamically when items drop)
+#                     1 - Enabled (pre-stages scalable instance loot variants at startup)
 #
 
-ItemScaling.PreStageDungeonLoot = 1
+ItemScaling.PreStageDungeonLoot = 0
 
 #
 #    ItemScaling.BracketStep

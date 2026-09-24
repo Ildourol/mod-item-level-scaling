@@ -7,10 +7,13 @@
 
 #include "ItemScalingCommon.h"
 #include <atomic>
+#include <deque>
 #include <map>
 #include <shared_mutex>
 #include <unordered_map>
 #include <vector>
+
+struct ItemTemplate;
 
 inline uint64 PackVariantKey(uint32 baseEntry, uint8 targetLevel, uint16 targetIlvl, uint8 formulaVersion)
 {
@@ -31,9 +34,29 @@ public:
     // Invoked during WorldScript::OnStartup() after all tables and DBCs are loaded
     void Initialize();
 
-    // Fast O(1) in-memory lookup during loot generation (zero DB writes, zero lag)
-    [[nodiscard]] uint32 GetVariantEntry(uint32 baseEntry, uint8 targetEffectiveLevel, uint16 targetItemLevel, uint8 formulaVersion) const;
-    [[nodiscard]] inline uint32 GetVariantEntryFast(uint32 baseEntry, uint8 targetEffectiveLevel, uint16 targetItemLevel, uint8 formulaVersion) const
+    // Fast O(1) in-memory lookup during loot generation with seamless on-demand creation
+    [[nodiscard]] uint32 GetOrCreateVariant(
+        ItemTemplate const* baseProto,
+        uint8 targetEffectiveLevel,
+        uint16 targetItemLevel,
+        uint8 formulaVersion,
+        uint8 highestRealPlayerLevel
+    );
+
+    // Fast O(1) in-memory lookup; creates on-demand if missing
+    [[nodiscard]] uint32 GetVariantEntry(
+        uint32 baseEntry,
+        uint8 targetEffectiveLevel,
+        uint16 targetItemLevel,
+        uint8 formulaVersion
+    );
+
+    [[nodiscard]] inline uint32 GetVariantEntryFast(
+        uint32 baseEntry,
+        uint8 targetEffectiveLevel,
+        uint16 targetItemLevel,
+        uint8 formulaVersion
+    )
     {
         return GetVariantEntry(baseEntry, targetEffectiveLevel, targetItemLevel, formulaVersion);
     }
@@ -53,6 +76,7 @@ private:
     mutable std::shared_mutex _cacheLock;
     std::unordered_map<uint64, uint32> _keyToEntry;
     std::unordered_map<uint32, std::vector<VariantRecord>> _baseToVariants;
+    std::deque<ItemTemplate> _customTemplates;
     std::atomic<uint32> _nextSyntheticEntry{60000};
     bool _dbSynchronized{false};
     bool _initialized{false};

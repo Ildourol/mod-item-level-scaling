@@ -278,7 +278,7 @@ uint16 ItemScalingBaseline::CalculateTargetItemLevel(ItemTemplate const* basePro
     }
     if (l0 == 0)
     {
-        l0 = std::clamp<uint8>(static_cast<uint8>(i0), 1, 80);
+        l0 = static_cast<uint8>(std::clamp<uint32>(i0, 1, 80));
     }
 
     uint8 lTarget = std::clamp<uint8>(targetLevel, 1, MAX_BASELINE_LEVEL);

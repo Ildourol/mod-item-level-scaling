@@ -42,8 +42,11 @@ Designed for level-scaling servers, solo-play, and dungeon-leveling experiences 
 
 - **Real Player Authority**: Target scaling levels ($H$) are determined exclusively by the highest-level **real** player inside the instance. Playerbots never unintentionally inflate or skew item scaling targets.
 - **Dynamic & Fixed Scaling Modes**:
-  - **Dynamic Mode**: Retains authentic dungeon hierarchy ($Trash < Elite < Boss$) relative to $H$ using customizable level floors and ceilings.
-  - **Fixed Mode**: Pinpoints the highest real player level $H$ directly.
+  - **Fixed Mode**: Pinpoints the highest real player level $H$ directly for all drops ($L_{\text{target}} = H$).
+  - **Dynamic Mode**: Retains authentic dungeon hierarchy ($Trash < Elite < Boss$) relative to $H$ using customizable level floors and ceilings. If `mod-autobalance` has scaled a creature, the loot matches the creature's scaled level with 100% parity.
+- **Native-Matching Bypass & Cross-Tier Scaling**:
+  - Drops whose native level already matches the target level (e.g., native level 80 item dropped for an 80 player, 70 for 70, 60 for 60) bypass scaling completely and retain 100% Blizzard stock stats.
+  - Lower-tier drops scale up to higher-level players (e.g., Level 80 players in Molten Core receive level 60 items scaled to 80; Level 80 players in Deadmines receive level 15–20 items scaled to 80; Level 50 players receive level 15–20 items scaled to 50).
 - **Blizzard Data-Driven ItemLevel Model**: Calculates target `ItemLevel` from stock Blizzard equipment medians $M(\text{Level}, \text{Quality}, \text{SlotFamily})$, ensuring boss and raid tier gear remains superior without carrying endgame stat inflation into low-level brackets.
 - **Native DBC Growth Curves**:
   - Leverages `RandomPropertiesPoints.dbc` point budget tables across all qualities (Uncommon, Rare, Epic) and all 5 inventory slot families to accurately rescale primary stats, ratings, armor, block value, and resistances.
@@ -100,9 +103,6 @@ mod-item-level-scaling/
 ├── conf/
 │   ├── conf.sh.dist                     # Module build and SQL registration script
 │   └── mod_item_level_scaling.conf.dist # Complete module configuration file
-├── docs/
-│   ├── item_scaling_standalone_plan.md   # Zero core patch architectural plan
-│   └── item_scaling_optimization_plan.md # SQL & memory throughput optimization plan
 ├── sql/
 │   └── world/
 │       └── base/
@@ -167,10 +167,10 @@ Detailed configuration options are documented in `conf/mod_item_level_scaling.co
 | `ItemScaling.ScaleHeroics` | `1` | Enable scaling in heroic dungeons/raids |
 | `ItemScaling.ScaleChests` | `1` | Enable scaling for instanced chests and gameobjects |
 | `ItemScaling.LevelScaling.Method` | `"dynamic"` | Scaling mode: `"dynamic"` or `"fixed"` |
-| `ItemScaling.ExcludedLevels` | `"60, 70, 80"` | Milestone levels excluded from scaling to preserve stock endgame loot |
+| `ItemScaling.ExcludedLevels` | `""` | Milestone native levels explicitly excluded from scaling (native matches like 80->80 are auto-bypassed) |
 | `ItemScaling.SyntheticEntry.Start` | `"auto"` | Starting ID for synthetic templates (`"auto"` allocates immediately above max DB entry) |
 | `ItemScaling.SyntheticEntry.AutoOffset` | `1000` | Safety buffer between highest DB item and synthetic items when `Start = "auto"` |
-| `ItemScaling.PreStageDungeonLoot` | `1` | Pre-generate and sync instance loot into `item_template` at boot for zero runtime DB lag |
+| `ItemScaling.PreStageDungeonLoot` | `0` | Batch pre-stage instance loot at boot (`0` uses on-demand instant registration without DB bloat) |
 | `ItemScaling.BracketStep` | `2` | Level interval between pre-staged scaling tiers (1-10) |
 | `ItemScaling.RequiredLevel.Policy` | `"target-capped-player"` | Required level assignment policy (`"target-capped-player"`, `"player"`, `"target"`) |
 | `ItemScaling.PreserveNonZeroStats` | `1` | Prevent small non-zero stats from rounding down to 0 at lower levels |

@@ -340,7 +340,7 @@ namespace ItemScalingFormula
 
     uint8 CalculateRequiredLevel(ItemTemplate const* baseProto, uint8 targetEffectiveLevel, uint8 highestRealPlayerLevel)
     {
-        if (!baseProto || baseProto->RequiredLevel == 0)
+        if (!baseProto)
         {
             return 0;
         }

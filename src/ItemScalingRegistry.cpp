@@ -264,58 +264,26 @@ void ItemScalingRegistry::PreStageDungeonLoot()
         return;
     }
 
-    // Check how many variants already exist in scaled_item_variant
-    QueryResult countRes = WorldDatabase.Query("SELECT COUNT(*) FROM scaled_item_variant");
-    if (countRes && countRes->Fetch()[0].Get<uint32>() > 0)
-    {
-        LOG_INFO("server.loading", ">> ItemScaling: Scaled loot variants already pre-staged in database ({} variants). Skipping regeneration.", countRes->Fetch()[0].Get<uint32>());
-        return;
-    }
-
     LOG_INFO("server.loading", ">> ItemScaling: Pre-staging scalable dungeon and raid loot variants into database...");
 
-    // Query all distinct scalable weapons and armors in instance loot tables
+    WorldDatabase.DirectExecute("CREATE TEMPORARY TABLE IF NOT EXISTS temp_ils_loot (loot_id INT UNSIGNED PRIMARY KEY); TRUNCATE TABLE temp_ils_loot;");
+    WorldDatabase.DirectExecute("INSERT IGNORE INTO temp_ils_loot SELECT DISTINCT CASE WHEN ct.lootid > 0 THEN ct.lootid ELSE ct.entry END FROM creature cr JOIN instance_template inst ON cr.map = inst.map JOIN creature_template ct ON cr.id = ct.entry;");
+    WorldDatabase.DirectExecute("INSERT IGNORE INTO temp_ils_loot SELECT DISTINCT gt.Data1 FROM gameobject go JOIN instance_template inst ON go.map = inst.map JOIN gameobject_template gt ON go.id = gt.entry WHERE gt.type = 3 AND gt.Data1 > 0;");
+    WorldDatabase.DirectExecute("CREATE TEMPORARY TABLE IF NOT EXISTS temp_ils_items (item_id INT UNSIGNED PRIMARY KEY); TRUNCATE TABLE temp_ils_items;");
+    WorldDatabase.DirectExecute("INSERT IGNORE INTO temp_ils_items SELECT DISTINCT Item FROM creature_loot_template c JOIN temp_ils_loot t ON c.Entry = t.loot_id WHERE c.Reference = 0 AND c.Item > 0;");
+    WorldDatabase.DirectExecute("INSERT IGNORE INTO temp_ils_items SELECT DISTINCT r.Item FROM creature_loot_template c JOIN temp_ils_loot t ON c.Entry = t.loot_id JOIN reference_loot_template r ON c.Reference = r.Entry WHERE c.Reference > 0 AND r.Item > 0;");
+    WorldDatabase.DirectExecute("INSERT IGNORE INTO temp_ils_items SELECT DISTINCT Item FROM gameobject_loot_template g JOIN temp_ils_loot t ON g.Entry = t.loot_id WHERE g.Reference = 0 AND g.Item > 0;");
+    WorldDatabase.DirectExecute("INSERT IGNORE INTO temp_ils_items SELECT DISTINCT r.Item FROM gameobject_loot_template g JOIN temp_ils_loot t ON g.Entry = t.loot_id JOIN reference_loot_template r ON g.Reference = r.Entry WHERE g.Reference > 0 AND r.Item > 0;");
+
     std::string lootQuery = Acore::StringFormat(
         "SELECT it.entry, it.class, it.subclass, it.Quality, it.InventoryType, it.ItemLevel, it.RequiredLevel, "
         "       it.stat_type1, it.stat_value1, it.stat_type2, it.stat_value2, it.stat_type3, it.stat_value3, it.stat_type4, it.stat_value4, it.stat_type5, it.stat_value5, "
         "       it.stat_type6, it.stat_value6, it.stat_type7, it.stat_value7, it.stat_type8, it.stat_value8, it.stat_type9, it.stat_value9, it.stat_type10, it.stat_value10, "
         "       it.dmg_min1, it.dmg_max1, it.dmg_type1, it.dmg_min2, it.dmg_max2, it.dmg_type2, it.armor, it.delay "
         "FROM item_template it "
+        "JOIN temp_ils_items ti ON it.entry = ti.item_id "
         "WHERE it.class IN (2, 4) AND it.InventoryType NOT IN (0, 24, 27, 28) "
-        "AND it.entry < {} "
-        "AND it.entry IN ( "
-        "    SELECT c.Item FROM creature_loot_template c "
-        "    JOIN creature_template ct ON (c.Entry = ct.lootid OR (ct.lootid = 0 AND c.Entry = ct.entry)) "
-        "    JOIN creature cr ON (cr.id1 = ct.entry OR (cr.id2 != 0 AND cr.id2 = ct.entry) OR (cr.id3 != 0 AND cr.id3 = ct.entry) "
-        "                         OR (ct.difficulty_entry_1 != 0 AND ct.difficulty_entry_1 = cr.id1) "
-        "                         OR (ct.difficulty_entry_2 != 0 AND ct.difficulty_entry_2 = cr.id1) "
-        "                         OR (ct.difficulty_entry_3 != 0 AND ct.difficulty_entry_3 = cr.id1)) "
-        "    JOIN instance_template inst ON cr.map = inst.map "
-        "    WHERE c.Reference = 0 AND c.Item > 0 "
-        "    UNION "
-        "    SELECT r.Item FROM creature_loot_template c "
-        "    JOIN reference_loot_template r ON c.Reference = r.Entry "
-        "    JOIN creature_template ct ON (c.Entry = ct.lootid OR (ct.lootid = 0 AND c.Entry = ct.entry)) "
-        "    JOIN creature cr ON (cr.id1 = ct.entry OR (cr.id2 != 0 AND cr.id2 = ct.entry) OR (cr.id3 != 0 AND cr.id3 = ct.entry) "
-        "                         OR (ct.difficulty_entry_1 != 0 AND ct.difficulty_entry_1 = cr.id1) "
-        "                         OR (ct.difficulty_entry_2 != 0 AND ct.difficulty_entry_2 = cr.id1) "
-        "                         OR (ct.difficulty_entry_3 != 0 AND ct.difficulty_entry_3 = cr.id1)) "
-        "    JOIN instance_template inst ON cr.map = inst.map "
-        "    WHERE c.Reference > 0 AND r.Item > 0 "
-        "    UNION "
-        "    SELECT g.Item FROM gameobject_loot_template g "
-        "    JOIN gameobject_template gt ON g.Entry = gt.Data1 "
-        "    JOIN gameobject go ON gt.entry = go.id "
-        "    JOIN instance_template inst ON go.map = inst.map "
-        "    WHERE g.Reference = 0 AND g.Item > 0 "
-        "    UNION "
-        "    SELECT r.Item FROM gameobject_loot_template g "
-        "    JOIN reference_loot_template r ON g.Reference = r.Entry "
-        "    JOIN gameobject_template gt ON g.Entry = gt.Data1 "
-        "    JOIN gameobject go ON gt.entry = go.id "
-        "    JOIN instance_template inst ON go.map = inst.map "
-        "    WHERE g.Reference > 0 AND r.Item > 0 "
-        ")",
+        "AND it.entry < {} ",
         sItemScalingConfig->SyntheticEntryStart
     );
 
@@ -383,15 +351,16 @@ void ItemScalingRegistry::PreStageDungeonLoot()
         uint8 origRefLevel = static_cast<uint8>(baseProto.RequiredLevel);
         if (origRefLevel == 0)
         {
-            origRefLevel = std::clamp<uint8>(static_cast<uint8>(baseProto.ItemLevel), 1, 80);
+            origRefLevel = static_cast<uint8>(std::clamp<uint32>(baseProto.ItemLevel, 1, 80));
+        }
+
+        if (sItemScalingConfig->IsLevelExcluded(origRefLevel))
+        {
+            continue;
         }
 
         for (uint8 targetLvl = minLevel; targetLvl <= sItemScalingConfig->MaxLevel; targetLvl += step)
         {
-            if (sItemScalingConfig->IsLevelExcluded(targetLvl))
-            {
-                continue;
-            }
 
             uint16 targetIlvl = sItemScalingBaseline->CalculateTargetItemLevel(&baseProto, targetLvl, origRefLevel);
             if (targetIlvl == 0 || (targetIlvl == baseProto.ItemLevel && targetLvl == origRefLevel))
@@ -491,12 +460,19 @@ void ItemScalingRegistry::Initialize()
     _keyToEntry.clear();
     _baseToVariants.clear();
 
+    if (sItemScalingConfig->SyntheticEntryStart == 0)
+    {
+        ResolveSyntheticEntryRange();
+    }
+
     QueryResult result = WorldDatabase.Query(
         "SELECT variant_entry, base_entry, target_effective_level, target_item_level, formula_version "
         "FROM scaled_item_variant ORDER BY variant_entry ASC"
     );
 
     uint32 loadedCount = 0;
+    uint32 maxVarEntry = sItemScalingConfig->SyntheticEntryStart;
+
     if (result)
     {
         _keyToEntry.reserve(result->GetRowCount() + 1000);
@@ -509,6 +485,11 @@ void ItemScalingRegistry::Initialize()
             uint8 targetEffectiveLevel = fields[2].Get<uint8>();
             uint16 targetItemLevel = fields[3].Get<uint16>();
             uint8 formulaVersion = fields[4].Get<uint8>();
+
+            if (variantEntry > maxVarEntry)
+            {
+                maxVarEntry = variantEntry;
+            }
 
             uint64 key = PackVariantKey(baseEntry, targetEffectiveLevel, targetItemLevel, formulaVersion);
             _keyToEntry[key] = variantEntry;
@@ -523,24 +504,141 @@ void ItemScalingRegistry::Initialize()
         } while (result->NextRow());
     }
 
+    _nextSyntheticEntry.store(std::max(maxVarEntry + 1, sItemScalingConfig->SyntheticEntryStart));
+
+    // Ensure _itemTemplateStoreFast is pre-sized to accommodate new synthetic entries
+    auto* fastStore = const_cast<std::vector<ItemTemplate*>*>(sObjectMgr->GetItemTemplateStoreFast());
+    uint32 neededSize = std::max(_nextSyntheticEntry.load() + 20000, 100000u);
+    if (fastStore && fastStore->size() < neededSize)
+    {
+        fastStore->resize(neededSize, nullptr);
+    }
+
     _initialized = true;
-    LOG_INFO("server.loading", ">> ItemScaling: Loaded and indexed {} scaled item variants into zero-stutter memory cache.", loadedCount);
+    LOG_INFO("server.loading", ">> ItemScaling: Loaded and indexed {} scaled item variants into zero-stutter memory cache (next synthetic ID: {}).", loadedCount, _nextSyntheticEntry.load());
 }
 
-uint32 ItemScalingRegistry::GetVariantEntry(uint32 baseEntry, uint8 targetEffectiveLevel, uint16 targetItemLevel, uint8 formulaVersion) const
+uint32 ItemScalingRegistry::GetOrCreateVariant(
+    ItemTemplate const* baseProto,
+    uint8 targetEffectiveLevel,
+    uint16 targetItemLevel,
+    uint8 formulaVersion,
+    uint8 highestRealPlayerLevel)
 {
-    uint64 key = PackVariantKey(baseEntry, targetEffectiveLevel, targetItemLevel, formulaVersion);
+    if (!baseProto)
+    {
+        return 0;
+    }
 
-    std::shared_lock lock(_cacheLock);
+    uint64 key = PackVariantKey(baseProto->ItemId, targetEffectiveLevel, targetItemLevel, formulaVersion);
 
-    // 1. Exact match (instant O(1) hash lookup)
+    // 1. Fast-path: read lock O(1) lookup
+    {
+        std::shared_lock lock(_cacheLock);
+        auto itr = _keyToEntry.find(key);
+        if (itr != _keyToEntry.end())
+        {
+            return itr->second;
+        }
+    }
+
+    // 2. Slow-path: write lock
+    std::unique_lock lock(_cacheLock);
+
+    // Double-check after acquiring write lock
     auto itr = _keyToEntry.find(key);
     if (itr != _keyToEntry.end())
     {
         return itr->second;
     }
 
-    // 2. Closest level and item level match for this base item
+    // Allocate collision-safe unique synthetic ID
+    uint32 newEntry = 0;
+    while (true)
+    {
+        uint32 candidate = _nextSyntheticEntry.fetch_add(1);
+        if (!sObjectMgr->GetItemTemplate(candidate))
+        {
+            newEntry = candidate;
+            break;
+        }
+    }
+
+    // Ensure _itemTemplateStoreFast vector has capacity in ObjectMgr
+    auto* fastStore = const_cast<std::vector<ItemTemplate*>*>(sObjectMgr->GetItemTemplateStoreFast());
+    if (fastStore && newEntry >= fastStore->size())
+    {
+        fastStore->resize(newEntry + 5000, nullptr);
+    }
+
+    // Construct scaled template deterministically
+    ItemTemplate scaledProto = ItemScalingFormula::CreateScaledTemplate(
+        baseProto,
+        newEntry,
+        targetEffectiveLevel,
+        targetItemLevel,
+        formulaVersion,
+        highestRealPlayerLevel
+    );
+
+    // Store in our persistent deque so memory pointer never invalidates
+    ItemTemplate& storedProto = _customTemplates.emplace_back(scaledProto);
+
+    // Register into ObjectMgr fast store and container
+    if (fastStore && newEntry < fastStore->size())
+    {
+        (*fastStore)[newEntry] = &storedProto;
+    }
+    auto* fullStore = const_cast<ItemTemplateContainer*>(sObjectMgr->GetItemTemplateStore());
+    if (fullStore)
+    {
+        (*fullStore)[newEntry] = storedProto;
+    }
+
+    // Index in our memory maps
+    _keyToEntry[key] = newEntry;
+
+    VariantRecord rec;
+    rec.variantEntry = newEntry;
+    rec.targetEffectiveLevel = targetEffectiveLevel;
+    rec.targetItemLevel = targetItemLevel;
+    _baseToVariants[baseProto->ItemId].push_back(rec);
+
+    // Persist to database asynchronously (zero map thread delay)
+    WorldDatabase.Execute(BuildItemTemplateInsertSQL(storedProto, baseProto->ItemId));
+    WorldDatabase.Execute(BuildVariantInsertSQL(newEntry, baseProto->ItemId, targetEffectiveLevel, targetItemLevel, formulaVersion));
+
+    if (sItemScalingConfig->Debug)
+    {
+        LOG_INFO("module.ItemScaling", "ItemScalingRegistry: Created scaled variant {} for base item {} '{}' (Target Lvl: {}, Target Ilvl: {})",
+            newEntry, baseProto->ItemId, baseProto->Name1, targetEffectiveLevel, targetItemLevel);
+    }
+
+    return newEntry;
+}
+
+uint32 ItemScalingRegistry::GetVariantEntry(uint32 baseEntry, uint8 targetEffectiveLevel, uint16 targetItemLevel, uint8 formulaVersion)
+{
+    uint64 key = PackVariantKey(baseEntry, targetEffectiveLevel, targetItemLevel, formulaVersion);
+
+    {
+        std::shared_lock lock(_cacheLock);
+        auto itr = _keyToEntry.find(key);
+        if (itr != _keyToEntry.end())
+        {
+            return itr->second;
+        }
+    }
+
+    // If not found in cache, create on demand
+    ItemTemplate const* baseProto = sObjectMgr->GetItemTemplate(baseEntry);
+    if (baseProto)
+    {
+        return GetOrCreateVariant(baseProto, targetEffectiveLevel, targetItemLevel, formulaVersion, targetEffectiveLevel);
+    }
+
+    // Fallback: closest match in memory
+    std::shared_lock lock(_cacheLock);
     auto bItr = _baseToVariants.find(baseEntry);
     if (bItr != _baseToVariants.end() && !bItr->second.empty())
     {
