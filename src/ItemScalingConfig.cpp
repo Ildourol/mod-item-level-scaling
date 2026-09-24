@@ -85,7 +85,7 @@ void ItemScalingConfig::Load()
     UseAutoBalanceSettings = sConfigMgr->GetOption<bool>("ItemScaling.UseAutoBalanceSettings", false);
     if (UseAutoBalanceSettings)
     {
-        std::string abMethod = sConfigMgr->GetOption<std::string>("AutoBalance.LevelScaling.Method", "");
+        std::string abMethod = sConfigMgr->GetOption<std::string>("AutoBalance.LevelScaling.Method", "", false);
         if (abMethod == "fixed")
         {
             Method = SCALING_METHOD_FIXED;
@@ -95,10 +95,14 @@ void ItemScalingConfig::Load()
             Method = SCALING_METHOD_DYNAMIC;
         }
 
-        DynamicCeilingDungeons = static_cast<uint8>(sConfigMgr->GetOption<uint32>("AutoBalance.LevelScaling.DynamicLevel.Ceiling.Dungeons", DynamicCeilingDungeons));
-        DynamicFloorDungeons = static_cast<uint8>(sConfigMgr->GetOption<uint32>("AutoBalance.LevelScaling.DynamicLevel.Floor.Dungeons", DynamicFloorDungeons));
-        DynamicCeilingRaids = static_cast<uint8>(sConfigMgr->GetOption<uint32>("AutoBalance.LevelScaling.DynamicLevel.Ceiling.Raids", DynamicCeilingRaids));
-        DynamicFloorRaids = static_cast<uint8>(sConfigMgr->GetOption<uint32>("AutoBalance.LevelScaling.DynamicLevel.Floor.Raids", DynamicFloorRaids));
+        DynamicCeilingDungeons = static_cast<uint8>(sConfigMgr->GetOption<uint32>(
+            "AutoBalance.LevelScaling.DynamicLevel.Ceiling.Dungeons", DynamicCeilingDungeons, false));
+        DynamicFloorDungeons = static_cast<uint8>(sConfigMgr->GetOption<uint32>(
+            "AutoBalance.LevelScaling.DynamicLevel.Floor.Dungeons", DynamicFloorDungeons, false));
+        DynamicCeilingRaids = static_cast<uint8>(sConfigMgr->GetOption<uint32>(
+            "AutoBalance.LevelScaling.DynamicLevel.Ceiling.Raids", DynamicCeilingRaids, false));
+        DynamicFloorRaids = static_cast<uint8>(sConfigMgr->GetOption<uint32>(
+            "AutoBalance.LevelScaling.DynamicLevel.Floor.Raids", DynamicFloorRaids, false));
     }
 
     std::string syntheticStartStr = sConfigMgr->GetOption<std::string>("ItemScaling.SyntheticEntry.Start", "auto");
