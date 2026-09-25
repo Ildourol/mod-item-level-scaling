@@ -5,23 +5,8 @@
 void AddItemScalingWorldScripts();
 void AddItemScalingLootScripts();
 
-void AddItemScalingScripts()
+void Addmod_item_level_scalingScripts()
 {
     AddItemScalingWorldScripts();
     AddItemScalingLootScripts();
-}
-
-void Addmod_item_level_scalingScripts()
-{
-    AddItemScalingScripts();
-}
-
-void Addmod_instance_item_scalingScripts()
-{
-    AddItemScalingScripts();
-}
-
-void Addmod_scaled_instance_lootScripts()
-{
-    AddItemScalingScripts();
 }
