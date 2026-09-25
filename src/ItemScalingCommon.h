@@ -31,17 +31,18 @@ struct VariantKey
     uint8  targetEffectiveLevel{0};
     uint16 targetItemLevel{0};
     uint8  formulaVersion{1};
+    uint8  requiredLevel{0};
 
     bool operator<(VariantKey const& o) const
     {
-        return std::tie(baseEntry, targetEffectiveLevel, targetItemLevel, formulaVersion) <
-               std::tie(o.baseEntry, o.targetEffectiveLevel, o.targetItemLevel, o.formulaVersion);
+        return std::tie(baseEntry, targetEffectiveLevel, targetItemLevel, formulaVersion, requiredLevel) <
+               std::tie(o.baseEntry, o.targetEffectiveLevel, o.targetItemLevel, o.formulaVersion, o.requiredLevel);
     }
 
     bool operator==(VariantKey const& o) const
     {
-        return std::tie(baseEntry, targetEffectiveLevel, targetItemLevel, formulaVersion) ==
-               std::tie(o.baseEntry, o.targetEffectiveLevel, o.targetItemLevel, o.formulaVersion);
+        return std::tie(baseEntry, targetEffectiveLevel, targetItemLevel, formulaVersion, requiredLevel) ==
+               std::tie(o.baseEntry, o.targetEffectiveLevel, o.targetItemLevel, o.formulaVersion, o.requiredLevel);
     }
 };
 

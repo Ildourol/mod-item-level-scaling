@@ -10,6 +10,7 @@
 #include "ItemScalingConfig.h"
 #include "ItemScalingFormula.h"
 #include "ItemScalingRegistry.h"
+#include "ItemScalingSafety.h"
 #include "Log.h"
 #include "LootMgr.h"
 #include "Map.h"
@@ -22,6 +23,15 @@
 ItemScalingLootScript::ItemScalingLootScript()
     : MiscScript("ItemScalingLootScript", { MISCHOOK_ON_AFTER_LOOT_TEMPLATE_PROCESS })
 {
+}
+
+// Keep this module compatible with stock master and the Playerbot fork.
+template <typename Session>
+static bool IsBotSession(Session const* session)
+{
+    if constexpr (requires { session->IsBot(); })
+        return session->IsBot();
+    return false;
 }
 
 static uint8 GetHighestEligibleRealPlayerLevel(Map const* map)
@@ -47,7 +57,7 @@ static uint8 GetHighestEligibleRealPlayerLevel(Map const* map)
         }
 
         // Strictly exclude bots from determining target level
-        if (sItemScalingConfig->RealPlayersOnly && session->IsBot())
+        if (sItemScalingConfig->RealPlayersOnly && IsBotSession(session))
         {
             continue;
         }
@@ -151,10 +161,6 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
 
     // 1. Determine highest real player level (H)
     uint8 highestRealPlayerLevel = GetHighestEligibleRealPlayerLevel(map);
-    if (highestRealPlayerLevel == 0 && lootOwner)
-    {
-        highestRealPlayerLevel = lootOwner->GetLevel();
-    }
     if (highestRealPlayerLevel == 0)
     {
         // No eligible players in instance: scaling disabled
@@ -208,7 +214,6 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
     {
         cMax = cSrc;
     }
-
 
     // 3. Determine target effective scaling level (L_target) following fixed or dynamic rules
     uint8 lTarget = highestRealPlayerLevel;
@@ -273,6 +278,11 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
             cSrc, cMax, lTarget);
     }
 
+    // Use exactly the same brackets as startup generation. Never increase the target by rounding.
+    uint8 requestedTarget = lTarget;
+    lTarget = ItemScalingSafety::Bracket(lTarget, sItemScalingConfig->MinLevel,
+        sItemScalingConfig->MaxLevel, sItemScalingConfig->BracketStep);
+
     // 4. Scale all eligible items currently in loot->items
     for (LootItem& item : loot->items)
     {
@@ -306,12 +316,12 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
         uint8 origRefLevel = static_cast<uint8>(baseProto->RequiredLevel);
         if (origRefLevel == 0)
         {
-            origRefLevel = (cSrc > 0) ? cSrc : static_cast<uint8>(std::clamp<uint32>(baseProto->ItemLevel, 1, 80));
+            origRefLevel = static_cast<uint8>(std::clamp<uint32>(baseProto->ItemLevel, 1, 80));
         }
 
         // Scaling does not apply when item's native level already matches target level
         // (e.g. 80 to 80, 70 to 70, 60 to 60)
-        if (origRefLevel == lTarget)
+        if (origRefLevel == requestedTarget || origRefLevel == lTarget)
         {
             if (sItemScalingConfig->Debug)
             {
@@ -370,8 +380,8 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
             continue;
         }
 
-        // Obtain or lazily create synthetic variant template
-        uint32 variantEntry = sItemScalingRegistry->GetOrCreateVariant(
+        // Only publish templates already loaded and validated by the core.
+        uint32 variantEntry = sItemScalingRegistry->FindVariant(
             baseProto,
             lTarget,
             targetIlvl,

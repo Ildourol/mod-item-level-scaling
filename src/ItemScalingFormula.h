@@ -9,6 +9,8 @@
 
 namespace ItemScalingFormula
 {
+    // Private stores: never load or mutate the core's global DBC stores.
+    bool LoadStartupCurves(std::string const& dataPath);
     [[nodiscard]] int8 GetSlotFamily(uint32 inventoryType);
 
     [[nodiscard]] double GetRandomPropertiesPoints(uint32 itemLevel, uint32 quality, uint8 slotFamily);

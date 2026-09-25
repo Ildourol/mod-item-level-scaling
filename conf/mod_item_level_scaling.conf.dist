@@ -218,7 +218,7 @@ ItemScaling.UseAutoBalanceSettings = 0
 #        Description: Starting item entry for dynamically allocated synthetic item templates.
 #                     Can be set to "auto" to automatically pick the lowest safe compact range
 #                     immediately above the maximum existing item ID in the database (e.g. ~60,000),
-#                     reducing memory footprint from 80+ MB down to < 650 KB.
+#                     avoiding unnecessarily sparse template IDs.
 #                     Or specify a custom fixed starting ID.
 #        Default:     "auto"
 #
@@ -237,18 +237,20 @@ ItemScaling.SyntheticEntry.AutoOffset = 1000
 #
 #    ItemScaling.PreStageDungeonLoot
 #        Description: Pre-generate and synchronize scalable dungeon/raid equipment variants into
-#                     item_template at server startup. With on-demand scaling enabled, this is optional.
-#        Default:     0 - Disabled (on-demand scaling creates variants dynamically when items drop)
-#                     1 - Enabled (pre-stages scalable instance loot variants at startup)
+#                     item_template before the core loads its template stores.
+#                     Gameplay never creates or inserts templates. A missing variant leaves base loot unchanged.
+#        Default:     1 - Enabled (bounded startup generation)
+#                     0 - Existing persisted variants only
 #
 
-ItemScaling.PreStageDungeonLoot = 0
+ItemScaling.PreStageDungeonLoot = 1
 
 #
 #    ItemScaling.BracketStep
 #        Description: Level interval between pre-staged scaling tiers (e.g. 2 means tiers at
-#                     every 2 levels). Lower values provide finer granularity; higher values
-#                     use fewer database rows.
+#                     every 2 levels). Runtime targets round down to the same bracket; MaxLevel
+#                     is always included. Native level matches retain their original item.
+#                     Use 1 for exact target levels. Larger steps reduce database size.
 #        Default:     2
 #        Range:       1 - 10
 #
@@ -287,3 +289,13 @@ ItemScaling.ExcludedItemIds = ""
 #
 
 ItemScaling.Debug = 0
+
+# Maximum new templates per startup (1..250000). Existing templates do not count toward this limit.
+# Generation resumes on later restarts. First boot can leave some loot unstaged.
+ItemScaling.MaxNewVariantsPerStartup = 25000
+
+# Highest ID the module may allocate or restore (60000..10000000).
+# The core's fast lookup vector grows with the highest item ID. Existing IDs are never renumbered.
+ItemScaling.SyntheticEntry.Maximum = 2000000
+
+# All ItemScaling settings require a restart; .reload config does not mutate the active snapshot.

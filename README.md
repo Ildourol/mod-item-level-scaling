@@ -1,194 +1,109 @@
-# Mod Item Level Scaling for AzerothCore (WotLK 3.3.5a)
+# Item level scaling for AzerothCore WotLK
 
-<p align="center">
-  <img src="assets/banner.png" alt="Mod Item Level Scaling Banner" width="850">
-</p>
+Scale eligible dungeon and raid equipment with persistent synthetic item templates. This module uses
+existing AzerothCore hooks and does not require core source changes.
 
-<p align="center">
-  <a href="https://github.com/azerothcore/azerothcore-wotlk"><img src="https://img.shields.io/badge/AzerothCore-WotLK%203.3.5a-blue.svg" alt="AzerothCore"></a>
-  <a href="https://github.com/Ildourol/mod-item-level-scaling/blob/master/conf/mod_item_level_scaling.conf.dist"><img src="https://img.shields.io/badge/Configuration-Fully%20Configurable-brightgreen.svg" alt="Configurable"></a>
-  <a href="https://github.com/Ildourol/mod-item-level-scaling/blob/master/acore-module.json"><img src="https://img.shields.io/badge/Compatibility-v1.0.0-orange.svg" alt="Module Version"></a>
-  <img src="https://img.shields.io/badge/Core%20Patch-Zero%20(100%25%20Standalone)-success.svg" alt="Zero Core Patch">
-</p>
+## Safety model
 
----
+Templates are generated **at startup, before the core loads `item_template`**. During gameplay the
+module only looks up validated variants. It never resizes or inserts into the core's item-template
+containers. A missing variant leaves the original item in the loot.
 
-## Description
+This replaces the earlier runtime insertion path, which could race with map threads and Playerbot
+readers. The module's own mutex cannot make those core containers safe for concurrent mutation.
 
-**mod-item-level-scaling** is a high-performance, **100% standalone** AzerothCore C++ module that dynamically scales equippable combat loot dropped inside instanced dungeons and raids to match real player progression.
+- Template and registry rows are written in the same transaction and checked after each batch.
+- Existing item IDs are preserved. Allocation starts above all existing template and registry IDs.
+- Required equip level is part of variant identity, so different player-level requirements cannot
+  accidentally reuse the same variant.
+- Curves are loaded into module-owned DBC stores using `RandPropPoints.dbc`, `ScalingStatValues.dbc`,
+  and their database-backed data. The core's global DBC stores are never reloaded by the module.
+- Configuration is a startup snapshot. `.reload config` logs that a restart is required.
+- SQL discovery follows `creature.id1/id2/id3`, difficulty templates, chest loot, and nested loot
+  references with cycle detection.
 
-Designed for level-scaling servers, solo-play, and dungeon-leveling experiences (including setups running `mod-autobalance` and `mod-playerbots`), it ensures that dungeon runs always reward level-appropriate equipment while strictly preserving Blizzard itemization balance, stat budgets, weapon speed curves, and boss loot prestige.
+## Upgrade from the original version
 
----
+Back up the world database before deployment. Stop worldserver, update this module, rebuild, and restart.
+There is no need to edit core source or delete existing synthetic items.
 
-## Key Highlights
+The module upgrades its own `scaled_item_variant` table at startup by adding `required_level`, copying
+existing equip requirements, and extending the unique key. The world database account therefore needs
+`CREATE`, `ALTER`, `SELECT`, `INSERT`, and `UPDATE` privileges for this module's work. An incompatible
+module table is reported and scaling is disabled for that run.
 
-- **Zero Core Modifications (100% Standalone)**:
-  Requires **no changes** to core AzerothCore files (`ObjectMgr.h`, `ObjectMgr.cpp`, etc.). Your core repository remains 100% stock upstream, ensuring completely conflict-free `git pull` updates from master or Playerbot branches.
-- **Auto-Detected Compact ID Range (`SyntheticEntry.Start = "auto"`)**:
-  Instead of allocating sparse ID ranges that inflate memory, the module dynamically detects the highest base item ID in your database and allocates synthetic variants in a compact range immediately above it (typically ~60,000+). This reduces `_itemTemplateStoreFast` vector memory overhead from 80+ MB down to **< 650 KB** (a >99% reduction).
-- **64-Bit Bit-Packed Key & True $O(1)$ Hash Table**:
-  Variant keys are packed into a 64-bit integer `(Base << 32) | (Level << 24) | (ItemLevel << 8) | Formula` and stored in `std::unordered_map<uint64, uint32>` with pre-allocated bucket `.reserve()`. Lookups execute in < 1 nanosecond with zero heap allocations, zero tree-traversal pointer overhead, and zero CPU cache misses during combat loot generation.
-- **Zero Combat Stutter & Map Thread Lag**:
-  Scalable variants are synchronized into `item_template` at server boot via the native `OnLoadCustomDatabaseTable()` hook. In-game loot generation is a pure, non-blocking in-memory read-only lookup with zero runtime SQL writes and zero map update tick delays.
-- **Single-Query Startup Recovery (Zero N+1 Queries)**:
-  Missing variants are synchronized in a single consolidated SQL `JOIN` query, eliminating thousands of sequential round-trip queries at boot.
-- **Transactional Startup Pre-Staging**:
-  Dungeon and raid equipment variants are generated across configured level brackets (`BracketStep`) and staged in batch transactions (500 ops per commit), completing first-time database population in milliseconds.
+**Review your existing configuration:**
 
----
-
-## Features
-
-- **Real Player Authority**: Target scaling levels ($H$) are determined exclusively by the highest-level **real** player inside the instance. Playerbots never unintentionally inflate or skew item scaling targets.
-- **Dynamic & Fixed Scaling Modes**:
-  - **Fixed Mode**: Pinpoints the highest real player level $H$ directly for all drops ($L_{\text{target}} = H$).
-  - **Dynamic Mode**: Retains authentic dungeon hierarchy ($Trash < Elite < Boss$) relative to $H$ using customizable level floors and ceilings. If `mod-autobalance` has scaled a creature, the loot matches the creature's scaled level with 100% parity.
-- **Native-Matching Bypass & Cross-Tier Scaling**:
-  - Drops whose native level already matches the target level (e.g., native level 80 item dropped for an 80 player, 70 for 70, 60 for 60) bypass scaling completely and retain 100% Blizzard stock stats.
-  - Lower-tier drops scale up to higher-level players (e.g., Level 80 players in Molten Core receive level 60 items scaled to 80; Level 80 players in Deadmines receive level 15–20 items scaled to 80; Level 50 players receive level 15–20 items scaled to 50).
-- **Blizzard Data-Driven ItemLevel Model**: Calculates target `ItemLevel` from stock Blizzard equipment medians $M(\text{Level}, \text{Quality}, \text{SlotFamily})$, ensuring boss and raid tier gear remains superior without carrying endgame stat inflation into low-level brackets.
-- **Native DBC Growth Curves**:
-  - Leverages `RandomPropertiesPoints.dbc` point budget tables across all qualities (Uncommon, Rare, Epic) and all 5 inventory slot families to accurately rescale primary stats, ratings, armor, block value, and resistances.
-  - Employs `ScalingStatValues.dbc` DPS curves for weapon damage while keeping weapon delay (speed) and damage spread intact.
-- **Exhaustive Stat Scaling**:
-  - Primary Stats: Strength, Agility, Stamina, Intellect, Spirit
-  - Melee/Ranged Ratings: Attack Power, Ranged AP, Crit, Hit, Haste, Expertise, Armor Penetration
-  - Spell Ratings: Spell Power, Spell Hit, Spell Crit, Spell Haste, Spell Penetration, MP5
-  - Defensive Ratings: Defense, Dodge, Parry, Shield Block Rating, Shield Block Value, Health Regen
-- **Persistent Synthetic Templates**:
-  - Generates custom item templates and stores them in the `scaled_item_variant` table.
-  - Items survive server restarts, logouts, mail, guild bank, auction house, and player trades.
-  - Tooltip stats match equipped stats with 100% fidelity without client-side patch requirements.
-- **Zero Global Mutation**:
-  - Base `ItemTemplate` entries are never mutated. Vendor gear, quest rewards, world drops, and items owned by other players remain completely unaffected.
-- **Broad Compatibility**:
-  - Fully tested and compatible with `mod-playerbots` (rolling and auto-equip gear evaluation) and `mod-autobalance`.
-
----
-
-## Architecture Overview
-
-```mermaid
-flowchart TD
-    subgraph S1["1. Server Startup (World.cpp:380)"]
-        A["worldserver initializes"] --> B["WorldScript::OnLoadCustomDatabaseTable()"]
-        B --> C["ItemScalingRegistry: Auto-Detect Compact ID Range"]
-        C --> D["SynchronizeExistingVariants() (Single Consolidated JOIN Query)"]
-        D --> E["PreStageDungeonLoot() (Batch SQL Transaction)"]
-        E --> F["Stock ObjectMgr::LoadItemTemplates() runs"]
-        F --> G["AzerothCore natively populates _itemTemplateStoreFast"]
-    end
-
-    subgraph S2["2. In-Memory Index (Startup Hook)"]
-        H["WorldScript::OnStartup()"] --> I["ItemScalingRegistry::Initialize()"]
-        I --> J["64-bit Packed Keys: (Base << 32) | (Lvl << 24) | (Ilvl << 8) | Formula"]
-        J --> K["std::unordered_map<uint64, uint32> (Pre-reserved O(1) Hash Map)"]
-    end
-
-    subgraph S3["3. Active Gameplay (Multi-Threaded Map Loops)"]
-        L["Boss/Creature killed in instance"] --> M["ItemScalingLootScript::OnAfterLootTemplateProcess()"]
-        M --> N["GetVariantEntry(packedKey) via std::shared_lock (< 1ns)"]
-        N --> O["item.itemid = pre-staged variant ID"]
-        O --> P["Player loots item -> Perfect tooltip, inspect, AH, mail, bots"]
-    end
+```ini
+ItemScaling.PreStageDungeonLoot = 1
+ItemScaling.BracketStep = 2
+ItemScaling.MaxNewVariantsPerStartup = 25000
+ItemScaling.SyntheticEntry.Maximum = 2000000
 ```
 
----
+An existing `PreStageDungeonLoot = 0` setting is respected: only already-persisted variants will be
+available. On-demand creation has been removed. Fresh installations use bounded pre-staging by default.
 
-## Repository Structure
+Generation is limited to 25,000 new variants per startup by default. Further restarts can generate
+remaining variants; a limit warning explains when staging is incomplete. Tune the limit for your
+hardware and database. First-time generation is real database work and can take significant time.
+Total database and template memory usage increase as variants are generated; the ID cap does not bound
+the total bytes used by templates.
 
-```
-mod-item-level-scaling/
-├── conf/
-│   ├── conf.sh.dist                     # Module build and SQL registration script
-│   └── mod_item_level_scaling.conf.dist # Complete module configuration file
-├── sql/
-│   └── world/
-│       └── base/
-│           └── scaled_item_variant.sql  # Database table for persistent item variants
-├── src/
-│   ├── ItemScalingBaseline.cpp          # Stock median ItemLevel baseline lookup
-│   ├── ItemScalingBaseline.h
-│   ├── ItemScalingCommon.h              # Common definitions and data models
-│   ├── ItemScalingConfig.cpp            # Configuration parser and cache
-│   ├── ItemScalingConfig.h
-│   ├── ItemScalingFormula.cpp           # DBC-driven stat and weapon scaling logic
-│   ├── ItemScalingFormula.h
-│   ├── ItemScalingLootScript.cpp        # Zero-stutter loot hook
-│   ├── ItemScalingLootScript.h
-│   ├── ItemScalingRegistry.cpp          # Startup DB sync, pre-staging & fast lookup
-│   ├── ItemScalingRegistry.h
-│   ├── ItemScalingWorldScript.cpp       # World lifecycle hooks and startup loader
-│   ├── ItemScalingWorldScript.h
-│   └── ItemScaling_loader.cpp           # Script registry entry point
-├── assets/                              # Documentation media
-├── acore-module.json                    # Module metadata
-└── include.sh                           # Bash build integration
-```
+Existing template rows are not silently regenerated. Previously issued items retain their IDs and
+stored values. If an older release persisted incorrect stats, restoring a backup or deliberately
+repairing those owned rows requires a separate reviewed data operation. Change `FormulaVersion` when
+changing scaling settings that should generate a new set of variants, including `PreserveNonZeroStats`.
+Old formula versions remain available for already-issued items. Recovery of a missing template uses
+the current formula implementation and saved level/requirement; historical formulas are not archived.
 
----
+## Behavior and limits
+
+- The highest eligible real player in the instance determines the target. Playerbot sessions are
+  excluded when `RealPlayersOnly = 1`. If no eligible player exists, scaling is skipped.
+- `fixed` uses that player's level; `dynamic` uses the configured floor/ceiling or an already-scaled
+  creature's level.
+- Native-level matches keep their original item. Other targets round down to the configured bracket;
+  `MaxLevel` is always included. Use `BracketStep = 1` for exact target levels.
+- Pre-staging includes upward and downward levels and the configured dynamic window, including distinct
+  equip requirements. Externally scaled targets outside that window can safely miss.
+- Items are discovered from spawned instance creatures/gameobjects and their loot references.
+  Script-only loot or creatures absent from the spawn tables may not be discovered. Such drops keep
+  their original item unless a matching persisted variant already exists.
+- Stats, armor, weapon damage, block, and resistances are scaled. Item spell effects, random-property
+  definitions, socket bonuses, and other inherited effects are not individually rescaled.
+- Block and resistances are persisted with their scaled values for newly generated templates.
+- Generation stops at the configured synthetic-ID ceiling. Existing IDs are not compacted or reused.
+- A world database shared by multiple concurrently starting worldservers is not supported for
+  generation. Run startup generation with one writer; others can use pre-staging disabled afterward.
 
 ## Installation
 
-1. Navigate to your AzerothCore modules folder and clone this repository:
-   ```bash
-   cd azerothcore-wotlk/modules
-   git clone https://github.com/Ildourol/mod-item-level-scaling.git
-   ```
+Clone into the core's `modules` directory:
 
-2. Re-generate CMake and compile the project (no core source edits needed):
-   ```bash
-   cd azerothcore-wotlk/build
-   cmake ../ -DCMAKE_INSTALL_PREFIX=/path/to/server
-   cmake --build . --config RelWithDebInfo --target worldserver -j $(nproc)
-   ```
+```bash
+git clone https://github.com/Ildourol/mod-item-level-scaling.git modules/mod-item-level-scaling
+```
 
-3. Configure the module:
-   ```bash
-   cp ../modules/mod-item-level-scaling/conf/mod_item_level_scaling.conf.dist /path/to/server/etc/mod_item_level_scaling.conf
-   ```
+Regenerate your existing core CMake configuration and rebuild worldserver. Copy the distributed module
+configuration to the module configuration directory used by your installation, then review the options.
+`include.sh` registers the base SQL with the database assembler; startup also creates/upgrades the
+module table when needed.
 
-4. Database Setup:
-   - The module automatically verifies and creates `scaled_item_variant` table if it doesn't already exist.
-   - If using `db_assembler.sh`, the SQL file in `sql/world/base/` will be imported automatically.
+## Compatibility and validation
 
----
+The module targets C++20 AzerothCore WotLK. Bot detection uses compile-time API detection so the same
+source can compile with stock master and the Playerbot fork.
 
-## Configuration
+Validation targets for this change:
 
-Detailed configuration options are documented in `conf/mod_item_level_scaling.conf.dist`. Key settings include:
+- Playerbot core: `mod-playerbots/azerothcore-wotlk`, commit `7f12e89ee5f467a50e62eba1d525eac7dc953d03`.
+- Stock core: `azerothcore/azerothcore-wotlk`, commit `b6c033cb009d4e137af70b60151d23bcbeb4b2b8`.
 
-| Setting | Default | Description |
-| :--- | :---: | :--- |
-| `ItemScaling.Enable` | `1` | Enable or disable the module entirely |
-| `ItemScaling.ScaleDungeons` | `1` | Enable scaling in normal 5-player instances |
-| `ItemScaling.ScaleRaids` | `1` | Enable scaling in 10/25-player raids |
-| `ItemScaling.ScaleHeroics` | `1` | Enable scaling in heroic dungeons/raids |
-| `ItemScaling.ScaleChests` | `1` | Enable scaling for instanced chests and gameobjects |
-| `ItemScaling.LevelScaling.Method` | `"dynamic"` | Scaling mode: `"dynamic"` or `"fixed"` |
-| `ItemScaling.ExcludedLevels` | `""` | Milestone native levels explicitly excluded from scaling (native matches like 80->80 are auto-bypassed) |
-| `ItemScaling.SyntheticEntry.Start` | `"auto"` | Starting ID for synthetic templates (`"auto"` allocates immediately above max DB entry) |
-| `ItemScaling.SyntheticEntry.AutoOffset` | `1000` | Safety buffer between highest DB item and synthetic items when `Start = "auto"` |
-| `ItemScaling.PreStageDungeonLoot` | `0` | Batch pre-stage instance loot at boot (`0` uses on-demand instant registration without DB bloat) |
-| `ItemScaling.BracketStep` | `2` | Level interval between pre-staged scaling tiers (1-10) |
-| `ItemScaling.RequiredLevel.Policy` | `"target-capped-player"` | Required level assignment policy (`"target-capped-player"`, `"player"`, `"target"`) |
-| `ItemScaling.PreserveNonZeroStats` | `1` | Prevent small non-zero stats from rounding down to 0 at lower levels |
-| `ItemScaling.RealPlayersOnly` | `1` | Only real players determine the scaling target level (bots strictly excluded) |
-
----
-
-## Compatibility and Requirements
-
-- **AzerothCore WotLK (branch `master` or `Playerbot`)** (latest commits)
-- **Core Modifications**: **None** (100% standalone)
-- **Client**: World of Warcraft: Wrath of the Lich King (3.3.5a - Build 12340)
-- Compatible with:
-  - [mod-autobalance](https://github.com/azerothcore/mod-autobalance)
-  - [mod-playerbots](https://github.com/liyunfan1223/mod-playerbots)
-
----
+See `tests/README.md` for reproducible checks. Compiler checks and isolated SQL regression tests do not
+replace testing your complete module combination in-game. Verify a dungeon drop, a raid drop, bot-only
+instances, trade/mail, and the same item's stats after a server restart before production rollout.
 
 ## License
 
-This module is released under the GNU General Public License v2 (or at your option any later version) in accordance with AzerothCore licensing.
+GNU General Public License v2 or later, consistent with AzerothCore.

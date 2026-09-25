@@ -7,81 +7,33 @@
 
 #include "ItemScalingCommon.h"
 #include <atomic>
-#include <deque>
 #include <map>
-#include <shared_mutex>
-#include <unordered_map>
-#include <vector>
-
-struct ItemTemplate;
-
-inline uint64 PackVariantKey(uint32 baseEntry, uint8 targetLevel, uint16 targetIlvl, uint8 formulaVersion)
-{
-    return (static_cast<uint64>(baseEntry) << 32) |
-           (static_cast<uint64>(targetLevel) << 24) |
-           (static_cast<uint64>(targetIlvl) << 8) |
-           static_cast<uint64>(formulaVersion);
-}
 
 class ItemScalingRegistry
 {
 public:
     static ItemScalingRegistry* instance();
 
-    // Invoked during WorldScript::OnLoadCustomDatabaseTable() before ObjectMgr::LoadItemTemplates()
+    // Generate durable templates before the core loads item_template.
     void OnLoadCustomDatabaseTable();
-
-    // Invoked during WorldScript::OnStartup() after all tables and DBCs are loaded
     void Initialize();
 
-    // Fast O(1) in-memory lookup during loot generation with seamless on-demand creation
-    [[nodiscard]] uint32 GetOrCreateVariant(
-        ItemTemplate const* baseProto,
-        uint8 targetEffectiveLevel,
-        uint16 targetItemLevel,
-        uint8 formulaVersion,
-        uint8 highestRealPlayerLevel
-    );
-
-    // Fast O(1) in-memory lookup; creates on-demand if missing
-    [[nodiscard]] uint32 GetVariantEntry(
-        uint32 baseEntry,
-        uint8 targetEffectiveLevel,
-        uint16 targetItemLevel,
-        uint8 formulaVersion
-    );
-
-    [[nodiscard]] inline uint32 GetVariantEntryFast(
-        uint32 baseEntry,
-        uint8 targetEffectiveLevel,
-        uint16 targetItemLevel,
-        uint8 formulaVersion
-    )
-    {
-        return GetVariantEntry(baseEntry, targetEffectiveLevel, targetItemLevel, formulaVersion);
-    }
+    // Gameplay is lookup-only. A miss leaves the original loot unchanged.
+    [[nodiscard]] uint32 FindVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,
+        uint16 targetItemLevel, uint8 formulaVersion, uint8 highestRealPlayerLevel) const;
 
 private:
-    void ResolveSyntheticEntryRange();
-    void SynchronizeExistingVariants();
-    void PreStageDungeonLoot();
+    bool EnsureSchema();
+    bool ResolveSyntheticEntryRange();
+    bool SynchronizeExistingVariants();
+    bool PreStageDungeonLoot();
 
-    struct VariantRecord
-    {
-        uint32 variantEntry{0};
-        uint8 targetEffectiveLevel{0};
-        uint16 targetItemLevel{0};
-    };
-
-    mutable std::shared_mutex _cacheLock;
-    std::unordered_map<uint64, uint32> _keyToEntry;
-    std::unordered_map<uint32, std::vector<VariantRecord>> _baseToVariants;
-    std::deque<ItemTemplate> _customTemplates;
-    std::atomic<uint32> _nextSyntheticEntry{60000};
+    std::map<VariantKey, uint32> _keyToEntry;
+    uint64 _nextSyntheticEntry{0};
     bool _dbSynchronized{false};
-    bool _initialized{false};
+    std::atomic<bool> _initialized{false};
 };
 
 #define sItemScalingRegistry ItemScalingRegistry::instance()
 
-#endif // _ITEM_SCALING_REGISTRY_H
+#endif

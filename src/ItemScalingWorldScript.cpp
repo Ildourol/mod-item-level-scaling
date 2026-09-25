@@ -3,7 +3,6 @@
  */
 
 #include "ItemScalingWorldScript.h"
-#include "ItemScalingBaseline.h"
 #include "ItemScalingConfig.h"
 #include "ItemScalingRegistry.h"
 #include "Log.h"
@@ -33,25 +32,24 @@ void ItemScalingWorldScript::OnStartup()
 {
     LOG_INFO("server.loading", ">> Initializing Mod-Item-Level-Scaling...");
 
-    sItemScalingConfig->Load();
-
     if (!sItemScalingConfig->Enable)
     {
         LOG_INFO("server.loading", ">> Mod-Item-Level-Scaling is disabled in configuration.");
         return;
     }
 
-    // Build data-driven Blizzard item-level baseline model
-    sItemScalingBaseline->BuildBaseline();
-
-    // Reconstruct and register all persisted scaled item variants
+    // Index only templates the core has already loaded.
     sItemScalingRegistry->Initialize();
-
-    LOG_INFO("server.loading", ">> Mod-Item-Level-Scaling initialized successfully.");
 }
 
-void ItemScalingWorldScript::OnAfterConfigLoad(bool /*reload*/)
+void ItemScalingWorldScript::OnAfterConfigLoad(bool reload)
 {
+    // Startup-generated templates depend on an immutable configuration snapshot.
+    if (reload)
+    {
+        LOG_WARN("module.ItemScaling", "ItemScaling configuration changes require a server restart.");
+        return;
+    }
     sItemScalingConfig->Load();
 }
 

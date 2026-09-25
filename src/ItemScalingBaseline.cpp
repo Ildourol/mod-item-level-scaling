@@ -11,6 +11,7 @@
 #include "ObjectMgr.h"
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
 
 ItemScalingBaseline* ItemScalingBaseline::instance()
 {
@@ -31,7 +32,15 @@ void ItemScalingBaseline::BuildBaseline()
     // Temporary collector: [level][quality][family] -> list of item levels
     std::vector<uint32> buckets[MAX_BASELINE_LEVEL + 1][MAX_BASELINE_QUALITY][MAX_BASELINE_FAMILY];
     uint32 totalProcessed = 0;
-    uint32 maxCutoff = sItemScalingConfig->SyntheticEntryStart > 0 ? sItemScalingConfig->SyntheticEntryStart : 60000;
+    std::unordered_set<uint32> syntheticEntries;
+    QueryResult variants = WorldDatabase.Query("SELECT variant_entry FROM scaled_item_variant");
+    if (variants)
+    {
+        do
+        {
+            syntheticEntries.insert(variants->Fetch()[0].Get<uint32>());
+        } while (variants->NextRow());
+    }
 
     if (useStore)
     {
@@ -39,7 +48,7 @@ void ItemScalingBaseline::BuildBaseline()
         {
             ItemTemplate const& proto = pair.second;
 
-            if (proto.ItemId >= maxCutoff)
+            if (syntheticEntries.count(proto.ItemId))
                 continue;
 
             if (proto.Class != ITEM_CLASS_WEAPON && proto.Class != ITEM_CLASS_ARMOR)
@@ -70,8 +79,8 @@ void ItemScalingBaseline::BuildBaseline()
     {
         QueryResult result = WorldDatabase.Query(
             "SELECT entry, class, Quality, RequiredLevel, ItemLevel, InventoryType, ScalingStatDistribution, ScalingStatValue "
-            "FROM item_template WHERE class IN (2, 4) AND RequiredLevel BETWEEN 1 AND 80 AND ItemLevel > 0 AND entry < {}",
-            maxCutoff
+            "FROM item_template WHERE class IN (2, 4) AND RequiredLevel BETWEEN 1 AND 80 AND ItemLevel > 0 "
+            "AND entry NOT IN (SELECT variant_entry FROM scaled_item_variant)"
         );
 
         if (result)
@@ -79,11 +88,11 @@ void ItemScalingBaseline::BuildBaseline()
             do
             {
                 Field* f = result->Fetch();
-                uint32 quality = f[2].Get<uint32>();
+                uint32 quality = f[2].Get<uint8>();
                 uint8 lvl = f[3].Get<uint8>();
-                uint32 ilvl = f[4].Get<uint32>();
-                uint32 invType = f[5].Get<uint32>();
-                uint32 ssd = f[6].Get<uint32>();
+                uint32 ilvl = f[4].Get<uint16>();
+                uint32 invType = f[5].Get<uint8>();
+                uint32 ssd = f[6].Get<uint16>();
                 uint32 ssv = f[7].Get<uint32>();
 
                 if (ssd != 0 || ssv != 0)

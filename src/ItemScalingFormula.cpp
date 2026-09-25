@@ -4,11 +4,29 @@
 
 #include "ItemScalingFormula.h"
 #include "ItemScalingConfig.h"
+#include "DBCfmt.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace ItemScalingFormula
 {
+    namespace
+    {
+        DBCStorage<RandomPropertiesPointsEntry> BudgetStore(RandomPropertiesPointsfmt);
+        DBCStorage<ScalingStatValuesEntry> ScalingStore(ScalingStatValuesfmt);
+    }
+
+    bool LoadStartupCurves(std::string const& dataPath)
+    {
+        // The core supports database-backed DBCs, including installations without these files.
+        BudgetStore.Load((dataPath + "dbc/RandPropPoints.dbc").c_str());
+        BudgetStore.LoadFromDB("randproppoints_dbc", BudgetStore.GetFormat());
+        ScalingStore.Load((dataPath + "dbc/ScalingStatValues.dbc").c_str());
+        ScalingStore.LoadFromDB("scalingstatvalues_dbc", ScalingStore.GetFormat());
+        return BudgetStore.GetNumRows() != 0 && ScalingStore.GetNumRows() != 0;
+    }
+
     int8 GetSlotFamily(uint32 inventoryType)
     {
         switch (inventoryType)
@@ -64,7 +82,7 @@ namespace ItemScalingFormula
             slotFamily = 2; // Relic / accessory fallback
         }
 
-        RandomPropertiesPointsEntry const* entry = sRandomPropertiesPointsStore.LookupEntry(itemLevel);
+        RandomPropertiesPointsEntry const* entry = BudgetStore.LookupEntry(itemLevel);
         if (!entry)
         {
             // Search nearest available entry in DBC
@@ -72,13 +90,13 @@ namespace ItemScalingFormula
             {
                 if (itemLevel > static_cast<uint32>(delta))
                 {
-                    entry = sRandomPropertiesPointsStore.LookupEntry(itemLevel - delta);
+                    entry = BudgetStore.LookupEntry(itemLevel - delta);
                     if (entry)
                     {
                         break;
                     }
                 }
-                entry = sRandomPropertiesPointsStore.LookupEntry(itemLevel + delta);
+                entry = BudgetStore.LookupEntry(itemLevel + delta);
                 if (entry)
                 {
                     break;
@@ -144,7 +162,9 @@ namespace ItemScalingFormula
         }
 
         double scaled = static_cast<double>(v0) * r;
-        int32 v1 = static_cast<int32>(std::round(scaled));
+        int32 v1 = static_cast<int32>(std::clamp(std::round(scaled),
+            static_cast<double>(std::numeric_limits<int32>::min()),
+            static_cast<double>(std::numeric_limits<int32>::max())));
 
         if (preserveNonZero && v1 == 0)
         {
@@ -216,8 +236,8 @@ namespace ItemScalingFormula
         double rArmor = rBudget;
         if (mask != 0)
         {
-            ScalingStatValuesEntry const* ssv0 = sScalingStatValuesStore.LookupEntry(l0);
-            ScalingStatValuesEntry const* ssv1 = sScalingStatValuesStore.LookupEntry(lTarget);
+            ScalingStatValuesEntry const* ssv0 = ScalingStore.LookupEntry(l0);
+            ScalingStatValuesEntry const* ssv1 = ScalingStore.LookupEntry(lTarget);
             if (ssv0 && ssv1)
             {
                 uint32 a0 = ssv0->getArmorMod(mask);
@@ -229,8 +249,8 @@ namespace ItemScalingFormula
             }
         }
 
-        int32 scaledArmor = static_cast<int32>(std::round(static_cast<double>(baseProto->Armor) * rArmor));
-        return static_cast<uint32>(std::max(1, scaledArmor));
+        return static_cast<uint32>(std::clamp(std::round(static_cast<double>(baseProto->Armor) * rArmor),
+            1.0, static_cast<double>(std::numeric_limits<uint32>::max())));
     }
 
     void ScaleWeaponDamage(ItemTemplate const* baseProto, ItemTemplate& scaledProto, double rBudget, uint8 l0, uint8 lTarget)
@@ -291,8 +311,8 @@ namespace ItemScalingFormula
         double rDPS = rBudget;
         if (mask != 0)
         {
-            ScalingStatValuesEntry const* ssv0 = sScalingStatValuesStore.LookupEntry(l0);
-            ScalingStatValuesEntry const* ssv1 = sScalingStatValuesStore.LookupEntry(lTarget);
+            ScalingStatValuesEntry const* ssv0 = ScalingStore.LookupEntry(l0);
+            ScalingStatValuesEntry const* ssv1 = ScalingStore.LookupEntry(lTarget);
             if (ssv0 && ssv1)
             {
                 uint32 dps0 = ssv0->getDPSMod(mask);
@@ -421,7 +441,7 @@ namespace ItemScalingFormula
         uint8 l0 = static_cast<uint8>(baseProto->RequiredLevel);
         if (l0 == 0)
         {
-            l0 = std::clamp<uint8>(static_cast<uint8>(baseProto->ItemLevel), 1, 80);
+            l0 = static_cast<uint8>(std::clamp<uint32>(baseProto->ItemLevel, 1, 80));
         }
 
         uint8 lTarget = std::clamp<uint8>(targetEffectiveLevel, 1, 80);
@@ -459,16 +479,23 @@ namespace ItemScalingFormula
         // 8. Scale shield block value
         if (baseProto->Block > 0)
         {
-            scaledProto.Block = static_cast<uint32>(ScaleAdditiveStat(baseProto->Block, rBudget, false));
+            scaledProto.Block = static_cast<uint32>(std::clamp(std::round(baseProto->Block * rBudget),
+                0.0, static_cast<double>(std::numeric_limits<uint32>::max())));
         }
 
         // 9. Scale resistances
-        scaledProto.HolyRes = ScaleAdditiveStat(baseProto->HolyRes, rBudget, false);
-        scaledProto.FireRes = ScaleAdditiveStat(baseProto->FireRes, rBudget, false);
-        scaledProto.NatureRes = ScaleAdditiveStat(baseProto->NatureRes, rBudget, false);
-        scaledProto.FrostRes = ScaleAdditiveStat(baseProto->FrostRes, rBudget, false);
-        scaledProto.ShadowRes = ScaleAdditiveStat(baseProto->ShadowRes, rBudget, false);
-        scaledProto.ArcaneRes = ScaleAdditiveStat(baseProto->ArcaneRes, rBudget, false);
+        scaledProto.HolyRes = std::clamp<int32>(ScaleAdditiveStat(baseProto->HolyRes, rBudget, false),
+            std::numeric_limits<int16>::min(), std::numeric_limits<int16>::max());
+        scaledProto.FireRes = std::clamp<int32>(ScaleAdditiveStat(baseProto->FireRes, rBudget, false),
+            std::numeric_limits<int16>::min(), std::numeric_limits<int16>::max());
+        scaledProto.NatureRes = std::clamp<int32>(ScaleAdditiveStat(baseProto->NatureRes, rBudget, false),
+            std::numeric_limits<int16>::min(), std::numeric_limits<int16>::max());
+        scaledProto.FrostRes = std::clamp<int32>(ScaleAdditiveStat(baseProto->FrostRes, rBudget, false),
+            std::numeric_limits<int16>::min(), std::numeric_limits<int16>::max());
+        scaledProto.ShadowRes = std::clamp<int32>(ScaleAdditiveStat(baseProto->ShadowRes, rBudget, false),
+            std::numeric_limits<int16>::min(), std::numeric_limits<int16>::max());
+        scaledProto.ArcaneRes = std::clamp<int32>(ScaleAdditiveStat(baseProto->ArcaneRes, rBudget, false),
+            std::numeric_limits<int16>::min(), std::numeric_limits<int16>::max());
 
         return scaledProto;
     }

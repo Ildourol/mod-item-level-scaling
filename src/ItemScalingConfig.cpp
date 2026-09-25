@@ -3,9 +3,11 @@
  */
 
 #include "ItemScalingConfig.h"
+#include "ItemScalingSafety.h"
 #include "Tokenize.h"
 #include "StringConvert.h"
 #include <string_view>
+#include <algorithm>
 
 ItemScalingConfig* ItemScalingConfig::instance()
 {
@@ -31,20 +33,11 @@ void ItemScalingConfig::Load()
         Method = SCALING_METHOD_DYNAMIC;
     }
 
-    MinLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>("ItemScaling.MinLevel", 1));
-    MaxLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>("ItemScaling.MaxLevel", 80));
-    if (MinLevel < 1)
-    {
-        MinLevel = 1;
-    }
-    if (MaxLevel > 80)
-    {
-        MaxLevel = 80;
-    }
-    if (MinLevel > MaxLevel)
-    {
-        std::swap(MinLevel, MaxLevel);
-    }
+    auto const levels = ItemScalingSafety::LevelRange(
+        sConfigMgr->GetOption<uint32>("ItemScaling.MinLevel", 1),
+        sConfigMgr->GetOption<uint32>("ItemScaling.MaxLevel", 80));
+    MinLevel = levels.first;
+    MaxLevel = levels.second;
 
     RealPlayersOnly = sConfigMgr->GetOption<bool>("ItemScaling.RealPlayersOnly", true);
     IncludeGameMasters = sConfigMgr->GetOption<bool>("ItemScaling.IncludeGameMasters", true);
@@ -77,10 +70,10 @@ void ItemScalingConfig::Load()
         ReqLevelPolicy = REQ_POLICY_TARGET_CAPPED_PLAYER;
     }
 
-    DynamicFloorDungeons = static_cast<uint8>(sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Dungeons", 5));
-    DynamicCeilingDungeons = static_cast<uint8>(sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Dungeons", 3));
-    DynamicFloorRaids = static_cast<uint8>(sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Raids", 5));
-    DynamicCeilingRaids = static_cast<uint8>(sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Raids", 3));
+    DynamicFloorDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Dungeons", 5)));
+    DynamicCeilingDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Dungeons", 3)));
+    DynamicFloorRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Raids", 5)));
+    DynamicCeilingRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Raids", 3)));
 
     UseAutoBalanceSettings = sConfigMgr->GetOption<bool>("ItemScaling.UseAutoBalanceSettings", false);
     if (UseAutoBalanceSettings)
@@ -95,14 +88,14 @@ void ItemScalingConfig::Load()
             Method = SCALING_METHOD_DYNAMIC;
         }
 
-        DynamicCeilingDungeons = static_cast<uint8>(sConfigMgr->GetOption<uint32>(
-            "AutoBalance.LevelScaling.DynamicLevel.Ceiling.Dungeons", DynamicCeilingDungeons, false));
-        DynamicFloorDungeons = static_cast<uint8>(sConfigMgr->GetOption<uint32>(
-            "AutoBalance.LevelScaling.DynamicLevel.Floor.Dungeons", DynamicFloorDungeons, false));
-        DynamicCeilingRaids = static_cast<uint8>(sConfigMgr->GetOption<uint32>(
-            "AutoBalance.LevelScaling.DynamicLevel.Ceiling.Raids", DynamicCeilingRaids, false));
-        DynamicFloorRaids = static_cast<uint8>(sConfigMgr->GetOption<uint32>(
-            "AutoBalance.LevelScaling.DynamicLevel.Floor.Raids", DynamicFloorRaids, false));
+        DynamicCeilingDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>(
+            "AutoBalance.LevelScaling.DynamicLevel.Ceiling.Dungeons", DynamicCeilingDungeons, false)));
+        DynamicFloorDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>(
+            "AutoBalance.LevelScaling.DynamicLevel.Floor.Dungeons", DynamicFloorDungeons, false)));
+        DynamicCeilingRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>(
+            "AutoBalance.LevelScaling.DynamicLevel.Ceiling.Raids", DynamicCeilingRaids, false)));
+        DynamicFloorRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>(
+            "AutoBalance.LevelScaling.DynamicLevel.Floor.Raids", DynamicFloorRaids, false)));
     }
 
     std::string syntheticStartStr = sConfigMgr->GetOption<std::string>("ItemScaling.SyntheticEntry.Start", "auto");
@@ -125,9 +118,13 @@ void ItemScalingConfig::Load()
     }
 
     SyntheticEntryAutoOffset = sConfigMgr->GetOption<uint32>("ItemScaling.SyntheticEntry.AutoOffset", 1000);
-    PreStageDungeonLoot = sConfigMgr->GetOption<bool>("ItemScaling.PreStageDungeonLoot", false);
+    PreStageDungeonLoot = sConfigMgr->GetOption<bool>("ItemScaling.PreStageDungeonLoot", true);
+    MaxNewVariantsPerStartup = std::clamp<uint32>(
+        sConfigMgr->GetOption<uint32>("ItemScaling.MaxNewVariantsPerStartup", 25000), 1, 250000);
+    SyntheticEntryMaximum = std::clamp<uint32>(
+        sConfigMgr->GetOption<uint32>("ItemScaling.SyntheticEntry.Maximum", 2000000), 60000, 10000000);
     BracketStep = static_cast<uint8>(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("ItemScaling.BracketStep", 2), 1, 10));
-    FormulaVersion = static_cast<uint8>(sConfigMgr->GetOption<uint32>("ItemScaling.FormulaVersion", 1));
+    FormulaVersion = static_cast<uint8>(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("ItemScaling.FormulaVersion", 1), 1, 255));
 
     ExcludedLevels.clear();
     std::string excludedLevelsStr = sConfigMgr->GetOption<std::string>("ItemScaling.ExcludedLevels", "");
