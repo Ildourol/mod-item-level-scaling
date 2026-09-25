@@ -46,6 +46,7 @@ Assertions cover:
 - Multiple equip requirements for the same base/target/formula.
 - Creature spawn alternatives, difficulty templates, and chest loot root discovery.
 - The recovery projection and restoration of a missing variant under its original ID.
+- SQL source extraction remains resilient to startup instrumentation added before recovery queries.
 - Transaction rollback after a duplicate mapping, with no orphan template left behind.
 
 ## Validation scope

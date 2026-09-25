@@ -590,52 +590,53 @@ void ItemScalingRegistry::Initialize()
                 persisted->RequiredLevel != key.requiredLevel || persisted->ItemLevel != key.targetItemLevel)
             {
                 LOG_ERROR("module.ItemScaling",
-                    "Persisted variant {} failed validation; not used for new loot.", entry);
+                    "Persisted variant {} failed validation; not published for runtime use.", entry);
                 continue;
             }
 
+            auto itr = templates->find(entry);
+            if (itr == templates->end() || &itr->second != persisted)
+            {
+                LOG_ERROR("module.ItemScaling",
+                    "Persisted variant {} is not backed by the core item-template store.", entry);
+                continue;
+            }
+
+            bool const correctedMetadata =
+                persisted->Class != base->Class ||
+                persisted->SubClass != base->SubClass ||
+                persisted->SoundOverrideSubclass != base->SoundOverrideSubclass ||
+                persisted->Material != base->Material ||
+                persisted->DisplayInfoID != base->DisplayInfoID ||
+                persisted->InventoryType != base->InventoryType ||
+                persisted->Sheath != base->Sheath;
+
+            itr->second = ItemScalingRuntimeTemplate::Build(*base, *persisted);
+
+            ItemTemplate const* published = sObjectMgr->GetItemTemplate(entry);
+            if (!published || published->ItemId != entry ||
+                published->RequiredLevel != key.requiredLevel ||
+                published->ItemLevel != key.targetItemLevel ||
+                published->Class != base->Class ||
+                published->SubClass != base->SubClass ||
+                published->SoundOverrideSubclass != base->SoundOverrideSubclass ||
+                published->Material != base->Material ||
+                published->DisplayInfoID != base->DisplayInfoID ||
+                published->InventoryType != base->InventoryType ||
+                published->Sheath != base->Sheath)
+            {
+                LOG_ERROR("module.ItemScaling",
+                    "Persisted variant {} failed runtime publication validation.", entry);
+                continue;
+            }
+
+            if (correctedMetadata)
+                ++correctedMetadataCount;
+
             if (key.generatorRevision == ITEM_SCALING_GENERATOR_REVISION)
             {
-                auto itr = templates->find(entry);
-                if (itr == templates->end() || &itr->second != persisted)
-                {
-                    LOG_ERROR("module.ItemScaling",
-                        "Persisted variant {} is not backed by the core item-template store.", entry);
-                    continue;
-                }
-
-                bool const correctedMetadata =
-                    persisted->Class != base->Class ||
-                    persisted->SubClass != base->SubClass ||
-                    persisted->SoundOverrideSubclass != base->SoundOverrideSubclass ||
-                    persisted->Material != base->Material ||
-                    persisted->DisplayInfoID != base->DisplayInfoID ||
-                    persisted->InventoryType != base->InventoryType ||
-                    persisted->Sheath != base->Sheath;
-
-                itr->second = ItemScalingRuntimeTemplate::Build(*base, *persisted);
-
-                ItemTemplate const* published = sObjectMgr->GetItemTemplate(entry);
-                if (!published || published->ItemId != entry ||
-                    published->RequiredLevel != key.requiredLevel ||
-                    published->ItemLevel != key.targetItemLevel ||
-                    published->Class != base->Class ||
-                    published->SubClass != base->SubClass ||
-                    published->SoundOverrideSubclass != base->SoundOverrideSubclass ||
-                    published->Material != base->Material ||
-                    published->DisplayInfoID != base->DisplayInfoID ||
-                    published->InventoryType != base->InventoryType ||
-                    published->Sheath != base->Sheath)
-                {
-                    LOG_ERROR("module.ItemScaling",
-                        "Persisted variant {} failed runtime publication validation.", entry);
-                    continue;
-                }
-
                 _keyToEntry.emplace(key, entry);
                 ++currentRevisionCount;
-                if (correctedMetadata)
-                    ++correctedMetadataCount;
             }
             else
                 ++historicalRevisionCount;
@@ -646,10 +647,10 @@ void ItemScalingRegistry::Initialize()
     auto const elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - started);
     LOG_INFO("server.loading",
-        "ItemScaling: published and indexed {} current-generator variants from validated base templates; "
-        "{} required DBC identity corrections; {} historical variants remain persisted; "
-        "gameplay is lookup-only ({} ms).",
-        currentRevisionCount, correctedMetadataCount, historicalRevisionCount, elapsed.count());
+        "ItemScaling: published {} current-generator and {} historical variants from validated base templates; "
+        "indexed current-generator variants only; {} required DBC identity corrections; gameplay is lookup-only "
+        "({} ms).",
+        currentRevisionCount, historicalRevisionCount, correctedMetadataCount, elapsed.count());
 }
 
 uint32 ItemScalingRegistry::FindVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,

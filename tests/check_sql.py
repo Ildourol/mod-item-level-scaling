@@ -26,12 +26,21 @@ def query_after(marker):
     tail = source[source.index(marker) + len(marker):]
     return strings(re.match(r'\s*((?:"(?:\\.|[^"\\])*"\s*)+)', tail).group(1))
 
+def query_in_function(name, next_name, marker):
+    body = function(name, next_name)
+    tail = body[body.index(marker) + len(marker):]
+    return strings(re.match(r'\s*((?:"(?:\\.|[^"\\])*"\s*)+)', tail).group(1))
+
 insert = strings(function('static std::string BuildItemTemplateInsertSQL', '\nnamespace'))
 insert = insert[insert.index('INSERT INTO'):]
 variant = strings(function('std::string VariantInsert', '// DirectCommitTransaction'))
 roots = query_after('QueryResult roots = WorldDatabase.Query(')
 base_columns = query_after('std::string const BaseColumns =')
-sync = query_after('bool ItemScalingRegistry::SynchronizeExistingVariants()\n{\n    QueryResult result = WorldDatabase.Query(')
+sync = query_in_function(
+    'bool ItemScalingRegistry::SynchronizeExistingVariants()',
+    'bool ItemScalingRegistry::PreStageDungeonLoot()',
+    'QueryResult result = WorldDatabase.Query(',
+)
 schema_migration = (module / 'data/sql/db-world/updates/2026_09_25_00_item_scaling_registry_schema.sql').read_text()
 generator_migration = (module / 'data/sql/db-world/updates/2026_09_25_01_item_scaling_generator_revision.sql').read_text()
 base_sql = (module / 'sql/world/base/scaled_item_variant.sql').read_text()
