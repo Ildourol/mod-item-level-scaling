@@ -619,8 +619,13 @@ void ItemScalingRegistry::Initialize()
                 if (!published || published->ItemId != entry ||
                     published->RequiredLevel != key.requiredLevel ||
                     published->ItemLevel != key.targetItemLevel ||
+                    published->Class != base->Class ||
+                    published->SubClass != base->SubClass ||
+                    published->SoundOverrideSubclass != base->SoundOverrideSubclass ||
+                    published->Material != base->Material ||
                     published->DisplayInfoID != base->DisplayInfoID ||
-                    published->InventoryType != base->InventoryType)
+                    published->InventoryType != base->InventoryType ||
+                    published->Sheath != base->Sheath)
                 {
                     LOG_ERROR("module.ItemScaling",
                         "Persisted variant {} failed runtime publication validation.", entry);
@@ -642,7 +647,7 @@ void ItemScalingRegistry::Initialize()
         std::chrono::steady_clock::now() - started);
     LOG_INFO("server.loading",
         "ItemScaling: published and indexed {} current-generator variants from validated base templates; "
-        "{} required runtime metadata corrections; {} historical variants remain persisted; "
+        "{} required DBC identity corrections; {} historical variants remain persisted; "
         "gameplay is lookup-only ({} ms).",
         currentRevisionCount, correctedMetadataCount, historicalRevisionCount, elapsed.count());
 }

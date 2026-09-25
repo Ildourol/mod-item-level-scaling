@@ -24,7 +24,7 @@ behavior of inheriting DBC-corrected display, class, inventory, sheath, and othe
 - Curves are loaded into module-owned DBC stores using `RandPropPoints.dbc`, `ScalingStatValues.dbc`,
   and their database-backed data. The core's global DBC stores are never reloaded by the module.
 - Configuration is a startup snapshot. `.reload config` logs that a restart is required.
-- Startup logs report recovery, pre-staging, runtime publication/indexing, metadata corrections,
+- Startup logs report recovery, pre-staging, runtime publication/indexing, DBC identity corrections,
   variant counts, synthetic-ID range, and elapsed time.
 - SQL discovery follows `creature.id1/id2/id3`, difficulty templates, chest loot, and nested loot
   references with cycle detection.
