@@ -14,6 +14,7 @@
 #include "StringFormat.h"
 #include "World.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <unordered_map>
@@ -320,6 +321,7 @@ bool ItemScalingRegistry::ResolveSyntheticEntryRange()
 
 bool ItemScalingRegistry::SynchronizeExistingVariants()
 {
+    auto const started = std::chrono::steady_clock::now();
     QueryResult result = WorldDatabase.Query(
         "SELECT s.variant_entry,s.base_entry,s.target_effective_level,s.target_item_level,"
         "s.formula_version,s.generator_revision,s.required_level,{} FROM scaled_item_variant s "
@@ -330,6 +332,7 @@ bool ItemScalingRegistry::SynchronizeExistingVariants()
     auto transaction = WorldDatabase.BeginTransaction();
     std::vector<uint32> entries;
     entries.reserve(250);
+    uint32 recovered = 0;
     do
     {
         Field* fields = result->Fetch();
@@ -355,14 +358,24 @@ bool ItemScalingRegistry::SynchronizeExistingVariants()
         scaled.RequiredLevel = key.requiredLevel;
         transaction->Append(BuildItemTemplateInsertSQL(scaled, key.baseEntry));
         entries.push_back(entry);
+        ++recovered;
         if (entries.size() >= 250 && !CommitBatch(transaction, entries))
             return false;
     } while (result->NextRow());
-    return CommitBatch(transaction, entries);
+    bool const committed = CommitBatch(transaction, entries);
+    if (committed)
+    {
+        auto const elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started);
+        LOG_INFO("server.loading", "ItemScaling: recovered {} missing variants in {} ms.",
+            recovered, elapsed.count());
+    }
+    return committed;
 }
 
 bool ItemScalingRegistry::PreStageDungeonLoot()
 {
+    auto const started = std::chrono::steady_clock::now();
     if (!sItemScalingConfig->PreStageDungeonLoot)
     {
         LOG_WARN("module.ItemScaling", "Pre-staging disabled: only existing persisted variants can be used.");
@@ -490,7 +503,16 @@ bool ItemScalingRegistry::PreStageDungeonLoot()
                 {
                     LOG_WARN("module.ItemScaling", "Startup generation limit reached after {} new variants. "
                         "Unstaged drops retain their base items; later restarts can stage remaining variants.", created);
-                    return CommitBatch(transaction, entries);
+                    bool const committed = CommitBatch(transaction, entries);
+                    if (committed)
+                    {
+                        auto const elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - started);
+                        LOG_INFO("server.loading",
+                            "ItemScaling: staged {} variants from {} discovered loot items in {} ms.",
+                            created, itemIds.size(), elapsed.count());
+                    }
+                    return committed;
                 }
                 uint32 entry = static_cast<uint32>(_nextSyntheticEntry++);
                 ItemTemplate scaled = ItemScalingFormula::CreateScaledTemplate(&base, entry, target,
@@ -505,8 +527,16 @@ bool ItemScalingRegistry::PreStageDungeonLoot()
             }
         }
     } while (bases->NextRow());
-    LOG_INFO("server.loading", "ItemScaling: staged {} new variants.", created);
-    return CommitBatch(transaction, entries);
+    bool const committed = CommitBatch(transaction, entries);
+    if (committed)
+    {
+        auto const elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started);
+        LOG_INFO("server.loading",
+            "ItemScaling: staged {} new variants from {} discovered loot items; {} persisted keys checked in {} ms.",
+            created, itemIds.size(), existing.size(), elapsed.count());
+    }
+    return committed;
 }
 
 void ItemScalingRegistry::OnLoadCustomDatabaseTable()
@@ -531,6 +561,7 @@ void ItemScalingRegistry::Initialize()
 {
     if (!_dbSynchronized || _initialized.load())
         return;
+    auto const started = std::chrono::steady_clock::now();
     QueryResult result = WorldDatabase.Query(
         "SELECT variant_entry,base_entry,target_effective_level,target_item_level,formula_version,"
         "generator_revision,required_level FROM scaled_item_variant");
@@ -562,10 +593,12 @@ void ItemScalingRegistry::Initialize()
         } while (result->NextRow());
     }
     _initialized.store(true);
+    auto const elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - started);
     LOG_INFO("server.loading",
         "ItemScaling: indexed {} current-generator variants; {} historical variants remain persisted; "
-        "gameplay is lookup-only.",
-        currentRevisionCount, historicalRevisionCount);
+        "gameplay is lookup-only ({} ms).",
+        currentRevisionCount, historicalRevisionCount, elapsed.count());
 }
 
 uint32 ItemScalingRegistry::FindVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,

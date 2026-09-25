@@ -21,6 +21,7 @@ readers. The module's own mutex cannot make those core containers safe for concu
 - Curves are loaded into module-owned DBC stores using `RandPropPoints.dbc`, `ScalingStatValues.dbc`,
   and their database-backed data. The core's global DBC stores are never reloaded by the module.
 - Configuration is a startup snapshot. `.reload config` logs that a restart is required.
+- Startup logs report recovery, pre-staging, indexing, variant counts, synthetic-ID range, and elapsed time.
 - SQL discovery follows `creature.id1/id2/id3`, difficulty templates, chest loot, and nested loot
   references with cycle detection.
 
