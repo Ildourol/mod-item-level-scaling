@@ -13,6 +13,7 @@ public:
     ItemScalingWorldScript();
 
     void OnBeforeWorldInitialized() override;
+    void OnBeforeFinalizePlayerWorldSession(uint32& cacheVersion) override;
     void OnLoadCustomDatabaseTable() override;
     void OnAfterConfigLoad(bool reload) override;
 };

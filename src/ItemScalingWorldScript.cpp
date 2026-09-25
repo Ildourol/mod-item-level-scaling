@@ -7,13 +7,26 @@
 #include "ItemScalingRegistry.h"
 #include "Log.h"
 
+namespace
+{
+    // Stable module salt: changes to client-visible synthetic item metadata can bump this value deliberately.
+    constexpr uint32 ITEM_SCALING_CLIENT_CACHE_SALT = 0x49534C01u;
+}
+
 ItemScalingWorldScript::ItemScalingWorldScript()
     : WorldScript("ItemScalingWorldScript", {
         WORLDHOOK_ON_BEFORE_WORLD_INITIALIZED,
+        WORLDHOOK_ON_BEFORE_FINALIZE_PLAYER_WORLD_SESSION,
         WORLDHOOK_ON_LOAD_CUSTOM_DATABASE_TABLE,
         WORLDHOOK_ON_AFTER_CONFIG_LOAD
     })
 {
+}
+
+void ItemScalingWorldScript::OnBeforeFinalizePlayerWorldSession(uint32& cacheVersion)
+{
+    if (sItemScalingConfig->Enable)
+        cacheVersion ^= ITEM_SCALING_CLIENT_CACHE_SALT;
 }
 
 void ItemScalingWorldScript::OnLoadCustomDatabaseTable()
