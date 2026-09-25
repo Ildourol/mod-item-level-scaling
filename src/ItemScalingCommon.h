@@ -10,6 +10,8 @@
 #include "DBCStructure.h"
 #include "ItemTemplate.h"
 #include "SharedDefines.h"
+#include <cstddef>
+#include <functional>
 #include <tuple>
 
 enum ItemScalingMethod : uint8
@@ -52,6 +54,27 @@ struct VariantKey
                    requiredLevel) ==
                std::tie(o.baseEntry, o.targetEffectiveLevel, o.targetItemLevel, o.formulaVersion,
                    o.generatorRevision, o.requiredLevel);
+    }
+};
+
+struct VariantKeyHash
+{
+    [[nodiscard]] std::size_t operator()(VariantKey const& key) const noexcept
+    {
+        std::size_t seed = 0;
+        auto combine = [&seed](auto value)
+        {
+            using Value = decltype(value);
+            seed ^= std::hash<Value>{}(value) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        };
+
+        combine(key.baseEntry);
+        combine(key.targetEffectiveLevel);
+        combine(key.targetItemLevel);
+        combine(key.formulaVersion);
+        combine(key.generatorRevision);
+        combine(key.requiredLevel);
+        return seed;
     }
 };
 

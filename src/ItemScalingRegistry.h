@@ -7,7 +7,7 @@
 
 #include "ItemScalingCommon.h"
 #include <atomic>
-#include <map>
+#include <unordered_map>
 
 class ItemScalingRegistry
 {
@@ -28,7 +28,7 @@ private:
     bool SynchronizeExistingVariants();
     bool PreStageDungeonLoot();
 
-    std::map<VariantKey, uint32> _keyToEntry;
+    std::unordered_map<VariantKey, uint32, VariantKeyHash> _keyToEntry;
     uint64 _nextSyntheticEntry{0};
     bool _dbSynchronized{false};
     std::atomic<bool> _initialized{false};

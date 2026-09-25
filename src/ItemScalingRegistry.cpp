@@ -16,7 +16,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <set>
 #include <unordered_map>
 #include <vector>
 #include <unordered_set>
@@ -423,7 +422,7 @@ bool ItemScalingRegistry::PreStageDungeonLoot()
                 collect(item, nested);
     }
 
-    std::set<VariantKey> existing;
+    std::unordered_set<VariantKey, VariantKeyHash> existing;
     QueryResult variants = WorldDatabase.Query(
         "SELECT base_entry,target_effective_level,target_item_level,formula_version,generator_revision,"
         "required_level FROM scaled_item_variant");

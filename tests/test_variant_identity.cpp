@@ -1,6 +1,7 @@
 #include "ItemScalingCommon.h"
 #include <cassert>
 #include <map>
+#include <unordered_map>
 
 int main()
 {
@@ -24,4 +25,16 @@ int main()
     assert(entries.at(first) == 60000);
     assert(entries.at(second) == 60001);
     assert(entries.at(otherGenerator) == 60003);
+
+    std::unordered_map<VariantKey, unsigned, VariantKeyHash> lookup;
+    lookup[first] = 60000;
+    lookup[second] = 60001;
+    lookup[otherFormula] = 60002;
+    lookup[otherGenerator] = 60003;
+
+    assert(lookup.size() == 4);
+    assert(lookup.at(first) == 60000);
+    assert(lookup.at(second) == 60001);
+    assert(lookup.at(otherFormula) == 60002);
+    assert(lookup.at(otherGenerator) == 60003);
 }
