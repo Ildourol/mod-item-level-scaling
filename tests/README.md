@@ -18,7 +18,8 @@ symbols remain unresolved intentionally: this is not a linked worldserver build.
 
 The executable regressions cover invalid and extreme level configuration, all supported bracket
 widths and levels, maximum-level preservation, ID allocation beyond existing templates and mappings,
-32-bit overflow avoidance, distinct required-level/formula-version/generator-revision identities, and
+32-bit overflow avoidance, distinct required-level/formula-version/generator-revision identities,
+runtime publication preserving persisted scaled fields while restoring validated base metadata, and
 target-resolution semantics for fixed/dynamic mode, dungeon hierarchy, external creature scaling,
 RealPlayersOnly, and level bounds.
 

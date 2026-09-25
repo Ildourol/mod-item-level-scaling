@@ -5,12 +5,15 @@ existing AzerothCore hooks and does not require core source changes.
 
 ## Safety model
 
-Templates are generated **at startup, before the core loads `item_template`**. During gameplay the
-module only looks up validated variants. It never resizes or inserts into the core's item-template
-containers. A missing variant leaves the original item in the loot.
+Template rows are generated **at startup, before the core loads `item_template`**. After AzerothCore
+loads and validates the normal item templates, the module re-publishes each current scaled variant from
+the validated base template metadata plus its already-persisted scaled fields. This runs from
+`WORLDHOOK_ON_BEFORE_WORLD_INITIALIZED`, before the world network becomes connectable.
 
-This replaces the earlier runtime insertion path, which could race with map threads and Playerbot
-readers. The module's own mutex cannot make those core containers safe for concurrent mutation.
+During gameplay the module only looks up indexed variants. It never resizes or inserts into the core's
+item-template containers while players are online. A missing variant leaves the original item in the
+loot. This preserves the safe startup-only model while restoring the original runtime-registration
+behavior of inheriting DBC-corrected display, class, inventory, sheath, and other validated metadata.
 
 - Template and registry rows are written in the same transaction and checked after each batch.
 - Existing item IDs are preserved. Allocation starts above all existing template and registry IDs.
@@ -21,7 +24,8 @@ readers. The module's own mutex cannot make those core containers safe for concu
 - Curves are loaded into module-owned DBC stores using `RandPropPoints.dbc`, `ScalingStatValues.dbc`,
   and their database-backed data. The core's global DBC stores are never reloaded by the module.
 - Configuration is a startup snapshot. `.reload config` logs that a restart is required.
-- Startup logs report recovery, pre-staging, indexing, variant counts, synthetic-ID range, and elapsed time.
+- Startup logs report recovery, pre-staging, runtime publication/indexing, metadata corrections,
+  variant counts, synthetic-ID range, and elapsed time.
 - SQL discovery follows `creature.id1/id2/id3`, difficulty templates, chest loot, and nested loot
   references with cycle detection.
 

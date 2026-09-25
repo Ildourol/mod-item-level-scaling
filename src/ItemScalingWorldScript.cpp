@@ -9,7 +9,7 @@
 
 ItemScalingWorldScript::ItemScalingWorldScript()
     : WorldScript("ItemScalingWorldScript", {
-        WORLDHOOK_ON_STARTUP,
+        WORLDHOOK_ON_BEFORE_WORLD_INITIALIZED,
         WORLDHOOK_ON_LOAD_CUSTOM_DATABASE_TABLE,
         WORLDHOOK_ON_AFTER_CONFIG_LOAD
     })
@@ -28,7 +28,7 @@ void ItemScalingWorldScript::OnLoadCustomDatabaseTable()
     sItemScalingRegistry->OnLoadCustomDatabaseTable();
 }
 
-void ItemScalingWorldScript::OnStartup()
+void ItemScalingWorldScript::OnBeforeWorldInitialized()
 {
     LOG_INFO("server.loading", ">> Initializing Mod-Item-Level-Scaling...");
 
@@ -38,7 +38,8 @@ void ItemScalingWorldScript::OnStartup()
         return;
     }
 
-    // Index only templates the core has already loaded.
+    // Re-publish persisted scaled fields on top of the core-validated base template metadata,
+    // then index the variants before the world network becomes connectable.
     sItemScalingRegistry->Initialize();
 }
 

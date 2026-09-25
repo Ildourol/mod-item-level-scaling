@@ -9,6 +9,7 @@
 #include "ItemScalingBaseline.h"
 #include "ItemScalingConfig.h"
 #include "ItemScalingFormula.h"
+#include "ItemScalingRuntimeTemplate.h"
 #include "Log.h"
 #include "ObjectMgr.h"
 #include "StringFormat.h"
@@ -562,44 +563,88 @@ void ItemScalingRegistry::Initialize()
 {
     if (!_dbSynchronized || _initialized.load())
         return;
+
     auto const started = std::chrono::steady_clock::now();
     QueryResult result = WorldDatabase.Query(
         "SELECT variant_entry,base_entry,target_effective_level,target_item_level,formula_version,"
         "generator_revision,required_level FROM scaled_item_variant");
+
     std::size_t currentRevisionCount = 0;
     std::size_t historicalRevisionCount = 0;
+    std::size_t correctedMetadataCount = 0;
+
     if (result)
     {
+        auto* templates = const_cast<ItemTemplateContainer*>(sObjectMgr->GetItemTemplateStore());
         _keyToEntry.reserve(static_cast<std::size_t>(result->GetRowCount()));
+
         do
         {
             Field* fields = result->Fetch();
             uint32 entry = fields[0].Get<uint32>();
             VariantKey key = ReadKey(fields + 1);
-            ItemTemplate const* item = sObjectMgr->GetItemTemplate(entry);
-            if (!ValidKey(key) || entry == key.baseEntry || !item ||
-                !sObjectMgr->GetItemTemplate(key.baseEntry) || item->RequiredLevel != key.requiredLevel ||
-                item->ItemLevel != key.targetItemLevel)
+            ItemTemplate const* persisted = sObjectMgr->GetItemTemplate(entry);
+            ItemTemplate const* base = sObjectMgr->GetItemTemplate(key.baseEntry);
+
+            if (!ValidKey(key) || entry == key.baseEntry || !persisted || !base ||
+                persisted->RequiredLevel != key.requiredLevel || persisted->ItemLevel != key.targetItemLevel)
             {
-                LOG_ERROR("module.ItemScaling", "Persisted variant {} failed validation; not used for new loot.", entry);
+                LOG_ERROR("module.ItemScaling",
+                    "Persisted variant {} failed validation; not used for new loot.", entry);
                 continue;
             }
+
             if (key.generatorRevision == ITEM_SCALING_GENERATOR_REVISION)
             {
+                auto itr = templates->find(entry);
+                if (itr == templates->end() || &itr->second != persisted)
+                {
+                    LOG_ERROR("module.ItemScaling",
+                        "Persisted variant {} is not backed by the core item-template store.", entry);
+                    continue;
+                }
+
+                bool const correctedMetadata =
+                    persisted->Class != base->Class ||
+                    persisted->SubClass != base->SubClass ||
+                    persisted->SoundOverrideSubclass != base->SoundOverrideSubclass ||
+                    persisted->Material != base->Material ||
+                    persisted->DisplayInfoID != base->DisplayInfoID ||
+                    persisted->InventoryType != base->InventoryType ||
+                    persisted->Sheath != base->Sheath;
+
+                itr->second = ItemScalingRuntimeTemplate::Build(*base, *persisted);
+
+                ItemTemplate const* published = sObjectMgr->GetItemTemplate(entry);
+                if (!published || published->ItemId != entry ||
+                    published->RequiredLevel != key.requiredLevel ||
+                    published->ItemLevel != key.targetItemLevel ||
+                    published->DisplayInfoID != base->DisplayInfoID ||
+                    published->InventoryType != base->InventoryType)
+                {
+                    LOG_ERROR("module.ItemScaling",
+                        "Persisted variant {} failed runtime publication validation.", entry);
+                    continue;
+                }
+
                 _keyToEntry.emplace(key, entry);
                 ++currentRevisionCount;
+                if (correctedMetadata)
+                    ++correctedMetadataCount;
             }
             else
                 ++historicalRevisionCount;
         } while (result->NextRow());
     }
+
     _initialized.store(true);
     auto const elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - started);
     LOG_INFO("server.loading",
-        "ItemScaling: indexed {} current-generator variants; {} historical variants remain persisted; "
+        "ItemScaling: published and indexed {} current-generator variants from validated base templates; "
+        "{} required runtime metadata corrections; {} historical variants remain persisted; "
         "gameplay is lookup-only ({} ms).",
-        currentRevisionCount, historicalRevisionCount, elapsed.count());
+        currentRevisionCount, correctedMetadataCount, historicalRevisionCount, elapsed.count());
 }
 
 uint32 ItemScalingRegistry::FindVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,

@@ -12,7 +12,7 @@ class ItemScalingWorldScript : public WorldScript
 public:
     ItemScalingWorldScript();
 
-    void OnStartup() override;
+    void OnBeforeWorldInitialized() override;
     void OnLoadCustomDatabaseTable() override;
     void OnAfterConfigLoad(bool reload) override;
 };

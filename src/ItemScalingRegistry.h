@@ -14,8 +14,10 @@ class ItemScalingRegistry
 public:
     static ItemScalingRegistry* instance();
 
-    // Generate durable templates before the core loads item_template.
+    // Generate durable rows before the core loads item_template.
     void OnLoadCustomDatabaseTable();
+
+    // Re-publish current variants from validated base templates before the world becomes connectable.
     void Initialize();
 
     // Gameplay is lookup-only. A miss leaves the original loot unchanged.
