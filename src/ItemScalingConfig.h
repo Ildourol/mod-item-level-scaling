@@ -25,7 +25,7 @@ public:
     uint8 MinLevel{1};
     uint8 MaxLevel{80};
     bool RealPlayersOnly{true};
-    bool IncludeGameMasters{true};
+    bool IncludeGameMasters{false};
     bool ScaleUp{true};
     bool ScaleDown{true};
     bool ScaleExistingScalingItems{false};
