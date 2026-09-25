@@ -18,7 +18,8 @@ symbols remain unresolved intentionally: this is not a linked worldserver build.
 
 The executable regressions cover invalid and extreme level configuration, all supported bracket
 widths and levels, maximum-level preservation, ID allocation beyond existing templates and mappings,
-32-bit overflow avoidance, and distinct required-level/formula-version identities.
+32-bit overflow avoidance, distinct required-level/formula-version identities, and the RealPlayersOnly
+external-creature-level guard.
 
 ## Isolated SQL checks
 
@@ -36,7 +37,7 @@ The script creates a disposable datadir, executes SQL through MariaDB's bootstra
 that datadir. It extracts the actual SQL strings from the module and uses the core's table definitions.
 Assertions cover:
 
-- V1-to-V2 module schema migration and repeat startup without renumbering issued items.
+- V1-to-V2 module schema migration, malformed named-index repair, and repeat startup without renumbering issued items.
 - Fresh-install schema and the expanded unique key.
 - Persisted block, all resistances, item level, equip requirement, and cloned metadata.
 - Multiple equip requirements for the same base/target/formula.
