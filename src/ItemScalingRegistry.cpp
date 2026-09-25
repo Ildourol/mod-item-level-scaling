@@ -329,6 +329,7 @@ bool ItemScalingRegistry::SynchronizeExistingVariants()
         return true;
     auto transaction = WorldDatabase.BeginTransaction();
     std::vector<uint32> entries;
+    entries.reserve(250);
     do
     {
         Field* fields = result->Fetch();
@@ -386,6 +387,8 @@ bool ItemScalingRegistry::PreStageDungeonLoot()
 
     std::unordered_set<uint32> itemIds;
     std::vector<uint32> references;
+    itemIds.reserve(static_cast<std::size_t>(roots->GetRowCount()));
+    references.reserve(static_cast<std::size_t>(roots->GetRowCount()));
     auto collect = [&](uint32 item, int32 reference)
     {
         if (reference)
@@ -410,6 +413,7 @@ bool ItemScalingRegistry::PreStageDungeonLoot()
         } while (rows->NextRow());
     }
     std::unordered_set<uint32> visited;
+    visited.reserve(referenceRows.size());
     while (!references.empty())
     {
         uint32 reference = references.back();
@@ -428,6 +432,7 @@ bool ItemScalingRegistry::PreStageDungeonLoot()
         "required_level FROM scaled_item_variant");
     if (variants)
     {
+        existing.reserve(static_cast<std::size_t>(variants->GetRowCount()));
         do
         {
             existing.insert(ReadKey(variants->Fetch()));
@@ -440,6 +445,7 @@ bool ItemScalingRegistry::PreStageDungeonLoot()
         return true;
     auto transaction = WorldDatabase.BeginTransaction();
     std::vector<uint32> entries;
+    entries.reserve(250);
     uint32 created = 0;
     do
     {
@@ -532,6 +538,7 @@ void ItemScalingRegistry::Initialize()
     std::size_t historicalRevisionCount = 0;
     if (result)
     {
+        _keyToEntry.reserve(static_cast<std::size_t>(result->GetRowCount()));
         do
         {
             Field* fields = result->Fetch();
