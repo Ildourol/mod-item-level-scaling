@@ -62,8 +62,9 @@ formula implementation and saved level/requirement; historical formulas are not 
 
 - The highest eligible real player in the instance determines the target. Playerbot sessions are
   excluded when `RealPlayersOnly = 1`. If no eligible player exists, scaling is skipped.
-- `fixed` uses that player's level; `dynamic` uses the configured floor/ceiling or an already-scaled
-  creature's level.
+- `fixed` uses that player's level. In `dynamic` mode, `RealPlayersOnly = 1` keeps the target
+  derived from the real-player level and configured floor/ceiling; externally scaled creature levels
+  are followed only when bots are allowed to affect the target.
 - Native-level matches keep their original item. By default, generated item levels and
   `RequiredLevel` values follow the mob/boss target level exactly. Larger `BracketStep` values round
   other targets down to the configured bracket; `MaxLevel` is always included.
