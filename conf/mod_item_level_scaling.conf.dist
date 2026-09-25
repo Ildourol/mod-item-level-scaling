@@ -116,7 +116,7 @@ ItemScaling.RealPlayersOnly = 1
 #                     1 - GMs affect scaling target
 #
 
-ItemScaling.IncludeGameMasters = 1
+ItemScaling.IncludeGameMasters = 0
 
 #
 #    ItemScaling.ScaleUp
