@@ -15,6 +15,7 @@
 #include "World.h"
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <set>
 #include <unordered_map>
 #include <vector>
@@ -545,18 +546,20 @@ void ItemScalingRegistry::Initialize()
                 LOG_ERROR("module.ItemScaling", "Persisted variant {} failed validation; not used for new loot.", entry);
                 continue;
             }
-            _keyToEntry.emplace(key, entry);
             if (key.generatorRevision == ITEM_SCALING_GENERATOR_REVISION)
+            {
+                _keyToEntry.emplace(key, entry);
                 ++currentRevisionCount;
+            }
             else
                 ++historicalRevisionCount;
         } while (result->NextRow());
     }
     _initialized.store(true);
     LOG_INFO("server.loading",
-        "ItemScaling: indexed {} validated variants ({} current generator revision, {} historical); "
+        "ItemScaling: indexed {} current-generator variants; {} historical variants remain persisted; "
         "gameplay is lookup-only.",
-        _keyToEntry.size(), currentRevisionCount, historicalRevisionCount);
+        currentRevisionCount, historicalRevisionCount);
 }
 
 uint32 ItemScalingRegistry::FindVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,
