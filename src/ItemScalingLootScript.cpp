@@ -11,6 +11,7 @@
 #include "ItemScalingFormula.h"
 #include "ItemScalingRegistry.h"
 #include "ItemScalingSafety.h"
+#include "ItemScalingTarget.h"
 #include "Log.h"
 #include "LootMgr.h"
 #include "Map.h"
@@ -215,60 +216,21 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
         cMax = cSrc;
     }
 
-    // 3. Determine target effective scaling level (L_target) following fixed or dynamic rules
-    uint8 lTarget = highestRealPlayerLevel;
-    if (sItemScalingConfig->Method == SCALING_METHOD_DYNAMIC)
-    {
-        // Dynamic mode: retain authentic dungeon hierarchy (Trash < Elite < Boss)
-        if (isGameObjectLoot || !creature)
-        {
-            // For gameobjects and chests in dynamic mode, scale directly to H
-            lTarget = highestRealPlayerLevel;
-        }
-        else
-        {
-            uint8 floor = sItemScalingConfig->GetDynamicFloor(map->IsRaid());
-            uint8 ceiling = sItemScalingConfig->GetDynamicCeiling(map->IsRaid());
-
-            // Check if creature was ALREADY dynamically scaled in the world by mod-autobalance.
-            // Stock unmodified creature templates have level range [cMin, cSrc].
-            // If creature->GetLevel() is outside [cMin, cSrc], AutoBalance has scaled it in the world.
-            uint8 currentCreatureLevel = creature->GetLevel();
-            bool isCreatureLevelScaled = (currentCreatureLevel < cMin || currentCreatureLevel > cSrc);
-
-            if (isCreatureLevelScaled && !sItemScalingConfig->RealPlayersOnly)
-            {
-                // External scaling may include bots. Only trust it when bots are allowed to affect the target.
-                lTarget = currentCreatureLevel;
-            }
-            else
-            {
-                // Creature in world is unscaled (e.g. AutoBalance disabled or not loaded).
-                // Calculate dynamic scaling level relative to highest real player level (H):
-                // selectedLevel = (H + ceiling) - (cMax - cSrc)
-                int32 delta = static_cast<int32>(cMax) - static_cast<int32>(cSrc);
-                if (delta < 0)
-                {
-                    delta = 0;
-                }
-
-                int32 raw = (static_cast<int32>(highestRealPlayerLevel) + static_cast<int32>(ceiling)) - delta;
-                int32 minLevel = static_cast<int32>(highestRealPlayerLevel) - static_cast<int32>(floor);
-                int32 maxLevel = static_cast<int32>(highestRealPlayerLevel) + static_cast<int32>(ceiling);
-
-                int32 clamped = std::clamp(raw, minLevel, maxLevel);
-                lTarget = static_cast<uint8>(std::clamp<int32>(clamped, 1, 80));
-            }
-        }
-    }
-    else // SCALING_METHOD_FIXED
-    {
-        // Fixed mode: pinpoint the highest real player level (H) directly for all loot
-        lTarget = highestRealPlayerLevel;
-    }
-
-    // Clamp to configured MinLevel and MaxLevel bounds
-    lTarget = std::clamp<uint8>(lTarget, sItemScalingConfig->MinLevel, sItemScalingConfig->MaxLevel);
+    // 3. Resolve the target level with pure, regression-tested policy logic.
+    ItemScalingTarget::Input targetInput;
+    targetInput.playerLevel = highestRealPlayerLevel;
+    targetInput.creatureMinLevel = cMin;
+    targetInput.creatureSourceLevel = cSrc;
+    targetInput.instanceMaxLevel = cMax;
+    targetInput.observedCreatureLevel = creature ? creature->GetLevel() : cSrc;
+    targetInput.floor = sItemScalingConfig->GetDynamicFloor(map->IsRaid());
+    targetInput.ceiling = sItemScalingConfig->GetDynamicCeiling(map->IsRaid());
+    targetInput.minLevel = sItemScalingConfig->MinLevel;
+    targetInput.maxLevel = sItemScalingConfig->MaxLevel;
+    targetInput.dynamic = sItemScalingConfig->Method == SCALING_METHOD_DYNAMIC;
+    targetInput.hasCreature = creature != nullptr;
+    targetInput.realPlayersOnly = sItemScalingConfig->RealPlayersOnly;
+    uint8 lTarget = ItemScalingTarget::Resolve(targetInput);
 
     if (sItemScalingConfig->Debug)
     {
