@@ -196,44 +196,57 @@ namespace
     }
 }
 
-bool ItemScalingRegistry::EnsureSchema()
+bool ItemScalingRegistry::ValidateSchema()
 {
-    WorldDatabase.DirectExecute(
-        "CREATE TABLE IF NOT EXISTS scaled_item_variant ("
-        "variant_entry INT UNSIGNED NOT NULL,base_entry INT UNSIGNED NOT NULL,"
-        "target_effective_level TINYINT UNSIGNED NOT NULL,target_item_level SMALLINT UNSIGNED NOT NULL,"
-        "formula_version TINYINT UNSIGNED NOT NULL DEFAULT 1,required_level TINYINT UNSIGNED NOT NULL DEFAULT 0,"
-        "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY (variant_entry),"
-        "UNIQUE KEY uk_variant_key (base_entry,target_effective_level,target_item_level,formula_version,required_level)"
-        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
     QueryResult columns = WorldDatabase.Query(
         "SELECT COLUMN_NAME,DATA_TYPE,COLUMN_TYPE FROM information_schema.COLUMNS "
         "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='scaled_item_variant'");
-    std::unordered_set<std::string> names;
-    if (columns)
+    if (!columns)
     {
-        do
-        {
-            Field* field = columns->Fetch();
-            std::string name = field[0].Get<std::string>();
-            std::string type = field[1].Get<std::string>();
-            std::string columnType = field[2].Get<std::string>();
-            std::string expectedType;
-            if (name == "variant_entry" || name == "base_entry")
-                expectedType = "int";
-            else if (name == "target_item_level")
-                expectedType = "smallint";
-            else if (name == "target_effective_level" || name == "formula_version" || name == "required_level")
-                expectedType = "tinyint";
-            if (!expectedType.empty() && (type != expectedType || columnType.find("unsigned") == std::string::npos))
-            {
-                LOG_ERROR("module.ItemScaling", "Incompatible module column {}: {}.", name, columnType);
-                return false;
-            }
-            names.insert(name);
-        } while (columns->NextRow());
+        LOG_ERROR("module.ItemScaling",
+            "Missing scaled_item_variant table. Apply module database updates before starting worldserver.");
+        return false;
     }
+
+    std::unordered_set<std::string> names;
+    do
+    {
+        Field* field = columns->Fetch();
+        std::string name = field[0].Get<std::string>();
+        std::string type = field[1].Get<std::string>();
+        std::string columnType = field[2].Get<std::string>();
+        std::string expectedType;
+
+        if (name == "variant_entry" || name == "base_entry")
+            expectedType = "int";
+        else if (name == "target_item_level")
+            expectedType = "smallint";
+        else if (name == "target_effective_level" || name == "formula_version" || name == "required_level")
+            expectedType = "tinyint";
+
+        if (!expectedType.empty() && (type != expectedType || columnType.find("unsigned") == std::string::npos))
+        {
+            LOG_ERROR("module.ItemScaling",
+                "Incompatible module column {}: {}. Apply the current module database updates.",
+                name, columnType);
+            return false;
+        }
+
+        names.insert(name);
+    } while (columns->NextRow());
+
+    for (char const* required : {"variant_entry", "base_entry", "target_effective_level",
+        "target_item_level", "formula_version", "required_level"})
+    {
+        if (!names.count(required))
+        {
+            LOG_ERROR("module.ItemScaling",
+                "Incompatible scaled_item_variant schema: missing {}. Apply the current module database updates.",
+                required);
+            return false;
+        }
+    }
+
     QueryResult engines = WorldDatabase.Query(
         "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() "
         "AND TABLE_NAME IN ('item_template','scaled_item_variant') AND ENGINE='InnoDB'");
@@ -242,38 +255,17 @@ bool ItemScalingRegistry::EnsureSchema()
         LOG_ERROR("module.ItemScaling", "ItemScaling requires InnoDB for template and registry transactions.");
         return false;
     }
+
     QueryResult primary = WorldDatabase.Query(
         "SELECT COLUMN_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() "
-        "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='PRIMARY'");
+        "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='PRIMARY' ORDER BY SEQ_IN_INDEX");
     if (!primary || primary->GetRowCount() != 1 || primary->Fetch()[0].Get<std::string>() != "variant_entry")
     {
-        LOG_ERROR("module.ItemScaling", "Incompatible module table primary key; scaling disabled.");
+        LOG_ERROR("module.ItemScaling",
+            "Incompatible module table primary key. Apply the current module database updates.");
         return false;
     }
-    for (char const* required : {"variant_entry", "base_entry", "target_effective_level",
-        "target_item_level", "formula_version"})
-    {
-        if (!names.count(required))
-        {
-            LOG_ERROR("module.ItemScaling", "Incompatible scaled_item_variant schema: missing {}.", required);
-            return false;
-        }
-    }
-    if (!names.count("required_level"))
-    {
-        WorldDatabase.DirectExecute(
-            "ALTER TABLE scaled_item_variant ADD COLUMN required_level TINYINT UNSIGNED NOT NULL DEFAULT 0");
-        QueryResult added = WorldDatabase.Query(
-            "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() "
-            "AND TABLE_NAME='scaled_item_variant' AND COLUMN_NAME='required_level'");
-        if (!added)
-            return false;
-    }
-    // Preserve the actual equip requirement on already-issued items. Legacy missing rows used target level.
-    WorldDatabase.DirectExecute(
-        "UPDATE scaled_item_variant s LEFT JOIN item_template i ON i.entry=s.variant_entry "
-        "SET s.required_level=LEAST(80,GREATEST(1,COALESCE(i.RequiredLevel,s.target_effective_level))) "
-        "WHERE s.required_level=0");
+
     QueryResult index = WorldDatabase.Query(
         "SELECT COLUMN_NAME,NON_UNIQUE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() "
         "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key' ORDER BY SEQ_IN_INDEX");
@@ -288,29 +280,16 @@ bool ItemScalingRegistry::EnsureSchema()
             indexIsUnique = indexIsUnique && field[1].Get<uint8>() == 0;
         } while (index->NextRow());
     }
+
     std::vector<std::string> expected = {"base_entry", "target_effective_level", "target_item_level",
         "formula_version", "required_level"};
     if (!indexIsUnique || indexColumns != expected)
     {
-        std::string drop = indexColumns.empty() ? "" : "DROP INDEX uk_variant_key, ";
-        WorldDatabase.DirectExecute(
-            "ALTER TABLE scaled_item_variant {}ADD UNIQUE KEY uk_variant_key "
-            "(base_entry,target_effective_level,target_item_level,formula_version,required_level)", drop);
-        QueryResult check = WorldDatabase.Query(
-            "SELECT COLUMN_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() "
-            "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key' "
-            "AND NON_UNIQUE=0 ORDER BY SEQ_IN_INDEX");
-        indexColumns.clear();
-        if (check)
-        {
-            do
-            {
-                indexColumns.push_back(check->Fetch()[0].Get<std::string>());
-            } while (check->NextRow());
-        }
-        if (indexColumns != expected)
-            return false;
+        LOG_ERROR("module.ItemScaling",
+            "Incompatible scaled_item_variant unique key. Apply the current module database updates.");
+        return false;
     }
+
     return true;
 }
 
@@ -515,7 +494,7 @@ void ItemScalingRegistry::OnLoadCustomDatabaseTable()
 {
     if (_dbSynchronized)
         return;
-    if (!EnsureSchema() || !ResolveSyntheticEntryRange() ||
+    if (!ValidateSchema() || !ResolveSyntheticEntryRange() ||
         !ItemScalingFormula::LoadStartupCurves(sWorld->GetDataPath()))
     {
         LOG_ERROR("module.ItemScaling", "Startup prerequisites failed; item scaling disabled for this run.");

@@ -34,10 +34,10 @@ python3 tests/check_sql.py \
 
 For extracted runtime libraries, add `--library-path /path/to/extracted/usr/lib/x86_64-linux-gnu`.
 The script creates a disposable datadir, executes SQL through MariaDB's bootstrap input, then removes
-that datadir. It extracts the actual SQL strings from the module and uses the core's table definitions.
+that datadir. It executes the module-owned migration SQL and uses the core's table definitions.
 Assertions cover:
 
-- V1-to-V2 module schema migration, malformed named-index repair, and repeat startup without renumbering issued items.
+- Module-owned V1-to-V2 schema migration, malformed named-index repair, and repeat application without renumbering issued items.
 - Fresh-install schema and the expanded unique key.
 - Persisted block, all resistances, item level, equip requirement, and cloned metadata.
 - Multiple equip requirements for the same base/target/formula.

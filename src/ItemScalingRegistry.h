@@ -23,7 +23,7 @@ public:
         uint16 targetItemLevel, uint8 formulaVersion, uint8 highestRealPlayerLevel) const;
 
 private:
-    bool EnsureSchema();
+    bool ValidateSchema();
     bool ResolveSyntheticEntryRange();
     bool SynchronizeExistingVariants();
     bool PreStageDungeonLoot();

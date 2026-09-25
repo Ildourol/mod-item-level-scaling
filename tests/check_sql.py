@@ -32,10 +32,10 @@ variant = strings(function('std::string VariantInsert', '// DirectCommitTransact
 roots = query_after('QueryResult roots = WorldDatabase.Query(')
 base_columns = query_after('std::string const BaseColumns =')
 sync = query_after('bool ItemScalingRegistry::SynchronizeExistingVariants()\n{\n    QueryResult result = WorldDatabase.Query(')
-schema = function('bool ItemScalingRegistry::EnsureSchema()', 'bool ItemScalingRegistry::ResolveSyntheticEntryRange()')
-executes = [strings(m.group(1)) for m in re.finditer(
-    r'WorldDatabase\.DirectExecute\(\s*((?:"(?:\\.|[^"\\])*"\s*)+)', schema)]
-create, add_column, backfill, add_index = executes
+migration = (module / 'data/sql/db-world/updates/2026_09_25_00_item_scaling_registry_schema.sql').read_text()
+base_sql = (module / 'sql/world/base/scaled_item_variant.sql').read_text()
+if 'DirectExecute' in function('bool ItemScalingRegistry::ValidateSchema()', 'bool ItemScalingRegistry::ResolveSyntheticEntryRange()'):
+    raise AssertionError('Runtime schema validation must remain read-only')
 
 stat_pairs = [value for i in range(10) for value in (3 + i, 20 + i)]
 values = [60000, 150, 50, *stat_pairs, 25.0, 50.0, 0.0, 0.0, 100, 11, 12, 13, 14, 15, 16, 77, 100]
@@ -60,7 +60,10 @@ for table in ['item_template', 'creature', 'creature_multispawn', 'instance_temp
     ddl = re.search(r'CREATE TABLE.*?\) ENGINE=.*?;', text, re.S).group(0)
     sql(ddl)
 # Start with the v1 module schema, preserving an already-issued item's equip level.
-legacy = create.replace('required_level TINYINT UNSIGNED NOT NULL DEFAULT 0,', '').replace(',required_level)', ')')
+current_create = base_sql[base_sql.index('CREATE TABLE'):]
+legacy = current_create.replace(
+    "    `required_level` TINYINT UNSIGNED NOT NULL COMMENT 'Resolved equip requirement; part of variant identity',\n",
+    '').replace(', `required_level`)', ')')
 sql(legacy)
 sql("INSERT INTO item_template (entry,class,subclass,name,Quality,InventoryType,ItemLevel,RequiredLevel,"
     "stat_type1,stat_value1,stat_type3,stat_value3,armor,block,holy_res,fire_res,nature_res,frost_res,shadow_res,arcane_res) "
@@ -68,21 +71,18 @@ sql("INSERT INTO item_template (entry,class,subclass,name,Quality,InventoryType,
     "(59000,4,4,'Existing shield',3,14,140,47,3,15,4,25,75,6,1,2,3,4,5,6)")
 sql('INSERT INTO scaled_item_variant (variant_entry,base_entry,target_effective_level,target_item_level,formula_version) '
     'VALUES (59000,100,50,140,1)')
-sql(add_column)
-sql(backfill)
-sql(add_index.format('DROP INDEX uk_variant_key, '))
+sql(migration)
 check('(SELECT required_level FROM scaled_item_variant WHERE variant_entry=59000)=47')
 check('(SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() '
-      "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key')=5")
+      "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key' AND NON_UNIQUE=0)=5")
 # A malformed non-unique index with the expected name must be repairable in place.
 sql('ALTER TABLE scaled_item_variant DROP INDEX uk_variant_key, ADD KEY uk_variant_key '
     '(base_entry,target_effective_level,target_item_level,formula_version,required_level)')
-sql(add_index.format('DROP INDEX uk_variant_key, '))
+sql(migration)
 check('(SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() '
       "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key' AND NON_UNIQUE=0)=5")
-# Repeated startup must neither drop nor alter existing IDs/requirements.
-sql(create)
-sql(backfill)
+# Reapplying the migration must neither drop nor alter existing IDs/requirements.
+sql(migration)
 check('(SELECT COUNT(*) FROM scaled_item_variant)=1')
 check('(SELECT RequiredLevel FROM item_template WHERE entry=59000)=47')
 
@@ -130,7 +130,6 @@ check('(SELECT RequiredLevel FROM item_template WHERE entry=60001)=53')
 
 # Fresh base SQL also agrees with the migrated key layout.
 sql('RENAME TABLE scaled_item_variant TO migrated_variants')
-base_sql = (module / 'sql/world/base/scaled_item_variant.sql').read_text()
 sql(base_sql[base_sql.index('CREATE TABLE'):])
 check('(SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() '
       "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key')=5")

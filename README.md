@@ -27,10 +27,11 @@ readers. The module's own mutex cannot make those core containers safe for concu
 Back up the world database before deployment. Stop worldserver, update this module, rebuild, and restart.
 There is no need to edit core source or delete existing synthetic items.
 
-The module upgrades its own `scaled_item_variant` table at startup by adding `required_level`, copying
-existing equip requirements, and extending the unique key. The world database account therefore needs
-`CREATE`, `ALTER`, `SELECT`, `INSERT`, and `UPDATE` privileges for this module's work. An incompatible
-module table is reported and scaling is disabled for that run.
+AzerothCore's module database updater applies this module's schema migration before the module startup
+hook. The migration adds `required_level` when needed, preserves existing synthetic IDs and equip
+requirements, and repairs the variant unique key. Runtime module code only validates that schema before
+pre-staging; it no longer performs schema DDL itself. This does not change generated item values,
+variant identity, scaling formulas, or runtime loot selection.
 
 **Review your existing configuration:**
 
@@ -90,8 +91,8 @@ git clone https://github.com/Ildourol/mod-item-level-scaling.git modules/mod-ite
 
 Regenerate your existing core CMake configuration and rebuild worldserver. Copy the distributed module
 configuration to the module configuration directory used by your installation, then review the options.
-`include.sh` registers the base SQL with the database assembler; startup also creates/upgrades the
-module table when needed.
+`include.sh` registers the base SQL with the database assembler. Existing installations are upgraded
+by the module SQL update before ItemScaling startup validation and pre-staging.
 
 ## Compatibility and validation
 
