@@ -379,7 +379,9 @@ bool ItemScalingRegistry::PreStageDungeonLoot()
     QueryResult roots = WorldDatabase.Query(
         "SELECT clt.Item,clt.Reference FROM creature cr "
         "JOIN instance_template inst ON inst.map=cr.map "
-        "JOIN creature_template base_ct ON base_ct.entry IN (cr.id1,cr.id2,cr.id3) "
+        "JOIN (SELECT guid AS spawnId,id AS entry FROM creature "
+        "UNION SELECT spawnId,entry FROM creature_multispawn) spawn_ct ON spawn_ct.spawnId=cr.guid "
+        "JOIN creature_template base_ct ON base_ct.entry=spawn_ct.entry "
         "JOIN creature_template ct ON ct.entry IN (base_ct.entry,base_ct.difficulty_entry_1,"
         "base_ct.difficulty_entry_2,base_ct.difficulty_entry_3) "
         "JOIN creature_loot_template clt ON clt.Entry=ct.lootid "
