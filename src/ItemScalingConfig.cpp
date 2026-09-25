@@ -40,7 +40,7 @@ void ItemScalingConfig::Load()
     MaxLevel = levels.second;
 
     RealPlayersOnly = sConfigMgr->GetOption<bool>("ItemScaling.RealPlayersOnly", true);
-    IncludeGameMasters = sConfigMgr->GetOption<bool>("ItemScaling.IncludeGameMasters", true);
+    IncludeGameMasters = sConfigMgr->GetOption<bool>("ItemScaling.IncludeGameMasters", false);
     ScaleUp = sConfigMgr->GetOption<bool>("ItemScaling.ScaleUp", true);
     ScaleDown = sConfigMgr->GetOption<bool>("ItemScaling.ScaleDown", true);
     ScaleExistingScalingItems = sConfigMgr->GetOption<bool>("ItemScaling.ScaleExistingScalingItems", false);
