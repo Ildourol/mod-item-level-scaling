@@ -50,12 +50,13 @@ hardware and database. First-time generation is real database work and can take 
 Total database and template memory usage increase as variants are generated; the ID cap does not bound
 the total bytes used by templates.
 
-Existing template rows are not silently regenerated. Previously issued items retain their IDs and
-stored values. If an older release persisted incorrect stats, restoring a backup or deliberately
-repairing those owned rows requires a separate reviewed data operation. Change `FormulaVersion` when
-changing scaling settings that should generate a new set of variants, including `PreserveNonZeroStats`.
-Old formula versions remain available for already-issued items. Recovery of a missing template uses
-the current formula implementation and saved level/requirement; historical formulas are not archived.
+Existing template rows are not silently regenerated. The fixed generator starts at
+`FormulaVersion = 1` as the baseline. Previously issued items retain their IDs and stored values. If
+an older release persisted incorrect stats, restoring a backup or deliberately repairing those owned
+rows requires a separate reviewed data operation. Change `FormulaVersion` when changing scaling
+settings that should generate a new set of variants, including `PreserveNonZeroStats`. Old formula
+versions remain available for already-issued items. Recovery of a missing template uses the current
+formula implementation and saved level/requirement; historical formulas are not archived.
 
 ## Behavior and limits
 
