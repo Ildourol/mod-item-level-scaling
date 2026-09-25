@@ -451,6 +451,7 @@ bool ItemScalingRegistry::PreStageDungeonLoot()
             existing.insert(ReadKey(variants->Fetch()));
         } while (variants->NextRow());
     }
+    std::size_t const persistedKeyCount = existing.size();
     QueryResult bases = WorldDatabase.Query(
         "SELECT {} FROM item_template b LEFT JOIN scaled_item_variant s ON s.variant_entry=b.entry "
         "WHERE s.variant_entry IS NULL AND b.class IN (2,4) ORDER BY b.entry", BaseColumns);
@@ -534,7 +535,7 @@ bool ItemScalingRegistry::PreStageDungeonLoot()
             std::chrono::steady_clock::now() - started);
         LOG_INFO("server.loading",
             "ItemScaling: staged {} new variants from {} discovered loot items; {} persisted keys checked in {} ms.",
-            created, itemIds.size(), existing.size(), elapsed.count());
+            created, itemIds.size(), persistedKeyCount, elapsed.count());
     }
     return committed;
 }
