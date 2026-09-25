@@ -74,6 +74,12 @@ sql(add_index.format('DROP INDEX uk_variant_key, '))
 check('(SELECT required_level FROM scaled_item_variant WHERE variant_entry=59000)=47')
 check('(SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() '
       "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key')=5")
+# A malformed non-unique index with the expected name must be repairable in place.
+sql('ALTER TABLE scaled_item_variant DROP INDEX uk_variant_key, ADD KEY uk_variant_key '
+    '(base_entry,target_effective_level,target_item_level,formula_version,required_level)')
+sql(add_index.format('DROP INDEX uk_variant_key, '))
+check('(SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() '
+      "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key' AND NON_UNIQUE=0)=5")
 # Repeated startup must neither drop nor alter existing IDs/requirements.
 sql(create)
 sql(backfill)
