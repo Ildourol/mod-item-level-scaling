@@ -275,19 +275,22 @@ bool ItemScalingRegistry::EnsureSchema()
         "SET s.required_level=LEAST(80,GREATEST(1,COALESCE(i.RequiredLevel,s.target_effective_level))) "
         "WHERE s.required_level=0");
     QueryResult index = WorldDatabase.Query(
-        "SELECT COLUMN_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() "
-        "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key' AND NON_UNIQUE=0 ORDER BY SEQ_IN_INDEX");
+        "SELECT COLUMN_NAME,NON_UNIQUE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() "
+        "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key' ORDER BY SEQ_IN_INDEX");
     std::vector<std::string> indexColumns;
+    bool indexIsUnique = true;
     if (index)
     {
         do
         {
-            indexColumns.push_back(index->Fetch()[0].Get<std::string>());
+            Field* field = index->Fetch();
+            indexColumns.push_back(field[0].Get<std::string>());
+            indexIsUnique = indexIsUnique && field[1].Get<uint8>() == 0;
         } while (index->NextRow());
     }
     std::vector<std::string> expected = {"base_entry", "target_effective_level", "target_item_level",
         "formula_version", "required_level"};
-    if (indexColumns != expected)
+    if (!indexIsUnique || indexColumns != expected)
     {
         std::string drop = indexColumns.empty() ? "" : "DROP INDEX uk_variant_key, ";
         WorldDatabase.DirectExecute(
