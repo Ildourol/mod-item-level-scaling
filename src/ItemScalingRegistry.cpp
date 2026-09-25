@@ -389,17 +389,17 @@ bool ItemScalingRegistry::PreStageDungeonLoot()
 
     std::unordered_set<uint32> itemIds;
     std::vector<uint32> references;
-    auto collect = [&](uint32 item, uint32 reference)
+    auto collect = [&](uint32 item, int32 reference)
     {
         if (reference)
-            references.push_back(reference);
+            references.push_back(static_cast<uint32>(std::abs(reference)));
         else if (item)
             itemIds.insert(item);
     };
     do
     {
         Field* fields = roots->Fetch();
-        collect(fields[0].Get<uint32>(), fields[1].Get<uint32>());
+        collect(fields[0].Get<uint32>(), fields[1].Get<int32>());
     } while (roots->NextRow());
     std::unordered_map<uint32, std::vector<std::pair<uint32, uint32>>> referenceRows;
     QueryResult rows = WorldDatabase.Query("SELECT Entry,Item,Reference FROM reference_loot_template");
@@ -409,7 +409,7 @@ bool ItemScalingRegistry::PreStageDungeonLoot()
         {
             Field* fields = rows->Fetch();
             referenceRows[fields[0].Get<uint32>()].emplace_back(
-                fields[1].Get<uint32>(), fields[2].Get<uint32>());
+                fields[1].Get<uint32>(), fields[2].Get<int32>());
         } while (rows->NextRow());
     }
     std::unordered_set<uint32> visited;

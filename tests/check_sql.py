@@ -105,10 +105,11 @@ for entry, item in [(100,201),(101,202),(102,203),(103,204)]:
     sql(f'INSERT INTO creature_loot_template (Entry,Item,Reference,Chance) VALUES ({entry},{item},0,100)')
 sql('INSERT INTO gameobject_template (entry,type,Data1) VALUES (40,3,104)')
 sql('INSERT INTO gameobject (guid,id,map) VALUES (2,40,33)')
-sql('INSERT INTO gameobject_loot_template (Entry,Item,Reference,Chance) VALUES (104,205,500,100)')
+sql('INSERT INTO gameobject_loot_template (Entry,Item,Reference,Chance) VALUES (104,205,-500,100)')
+sql('INSERT INTO reference_loot_template (Entry,Item,Reference,Chance) VALUES (500,206,-501,100),(501,207,0,100)')
 sql('CREATE TABLE root_results AS ' + roots)
 check('(SELECT COUNT(*) FROM root_results)=5')
-check('(SELECT COUNT(*) FROM root_results WHERE Reference=500)=1')
+check('(SELECT COUNT(*) FROM root_results WHERE Reference=-500)=1')
 # Exercise the shared partial-template projection, including a stat gap.
 sql('CREATE TABLE base_projection AS SELECT ' + base_columns + ' FROM item_template b WHERE entry=100')
 check('(SELECT stat_value3 FROM base_projection)=20')
