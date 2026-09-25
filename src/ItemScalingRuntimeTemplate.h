@@ -9,7 +9,7 @@
 
 namespace ItemScalingRuntimeTemplate
 {
-    // Synthetic IDs are absent from the stock Item.dbc, so core loading skips normal item validation.
+    // When a synthetic ID is absent from Item.dbc, core loading skips normal item validation.
     // Start from the validated base runtime template and restore only fields intentionally scaled by the module.
     inline ItemTemplate Build(ItemTemplate const& base, ItemTemplate const& persisted)
     {

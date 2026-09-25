@@ -42,8 +42,12 @@ int main()
     persisted.Damage[0].DamageType = SPELL_SCHOOL_NORMAL;
     persisted.Armor = 77;
     persisted.Block = 9;
+    persisted.HolyRes = 7;
     persisted.FireRes = 11;
+    persisted.NatureRes = 12;
     persisted.FrostRes = 13;
+    persisted.ShadowRes = 17;
+    persisted.ArcaneRes = 19;
 
     ItemTemplate runtime = ItemScalingRuntimeTemplate::Build(base, persisted);
 
@@ -57,8 +61,12 @@ int main()
     assert(runtime.Damage[0].DamageMax == persisted.Damage[0].DamageMax);
     assert(runtime.Armor == persisted.Armor);
     assert(runtime.Block == persisted.Block);
+    assert(runtime.HolyRes == persisted.HolyRes);
     assert(runtime.FireRes == persisted.FireRes);
+    assert(runtime.NatureRes == persisted.NatureRes);
     assert(runtime.FrostRes == persisted.FrostRes);
+    assert(runtime.ShadowRes == persisted.ShadowRes);
+    assert(runtime.ArcaneRes == persisted.ArcaneRes);
 
     assert(runtime.Class == base.Class);
     assert(runtime.SubClass == base.SubClass);
