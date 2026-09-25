@@ -124,7 +124,7 @@ void ItemScalingConfig::Load()
     SyntheticEntryMaximum = std::clamp<uint32>(
         sConfigMgr->GetOption<uint32>("ItemScaling.SyntheticEntry.Maximum", 2000000), 60000, 10000000);
     BracketStep = static_cast<uint8>(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("ItemScaling.BracketStep", 2), 1, 10));
-    FormulaVersion = static_cast<uint8>(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("ItemScaling.FormulaVersion", 1), 1, 255));
+    FormulaVersion = static_cast<uint8>(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("ItemScaling.FormulaVersion", 2), 1, 255));
 
     ExcludedLevels.clear();
     std::string excludedLevelsStr = sConfigMgr->GetOption<std::string>("ItemScaling.ExcludedLevels", "");

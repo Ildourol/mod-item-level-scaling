@@ -55,7 +55,7 @@ public:
     uint32 MaxNewVariantsPerStartup{25000};
     uint32 SyntheticEntryMaximum{2000000};
     uint8 BracketStep{2};
-    uint8 FormulaVersion{1};
+    uint8 FormulaVersion{2};
 
     std::unordered_set<uint8> ExcludedLevels;
     std::unordered_set<uint32> ExcludedMapIds;

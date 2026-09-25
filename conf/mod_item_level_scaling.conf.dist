@@ -263,7 +263,7 @@ ItemScaling.BracketStep = 2
 #        Default:     1
 #
 
-ItemScaling.FormulaVersion = 1
+ItemScaling.FormulaVersion = 2
 
 #
 #    ItemScaling.ExcludedMapIds
