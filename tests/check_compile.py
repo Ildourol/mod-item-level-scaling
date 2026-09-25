@@ -12,6 +12,9 @@ parser.add_argument('--cxx', default='g++')
 args = parser.parse_args()
 module = pathlib.Path(__file__).resolve().parents[1]
 core = args.core.resolve()
+loot_source = (module / 'src/ItemScalingLootScript.cpp').read_text()
+if 'if (isCreatureLevelScaled && !sItemScalingConfig->RealPlayersOnly)' not in loot_source:
+    raise AssertionError('RealPlayersOnly must not trust externally scaled creature levels')
 includes = sorted({str(p.parent) for p in (core / 'src').rglob('*.h')})
 includes += [str(core / p) for p in ['deps/fmt/include', 'deps/g3dlite/include',
                                    'deps/recastnavigation/Detour/Include', 'deps/SFMT']]
