@@ -18,8 +18,9 @@ symbols remain unresolved intentionally: this is not a linked worldserver build.
 
 The executable regressions cover invalid and extreme level configuration, all supported bracket
 widths and levels, maximum-level preservation, ID allocation beyond existing templates and mappings,
-32-bit overflow avoidance, distinct required-level/formula-version identities, and target-resolution
-semantics for fixed/dynamic mode, dungeon hierarchy, external creature scaling, RealPlayersOnly, and level bounds.
+32-bit overflow avoidance, distinct required-level/formula-version/generator-revision identities, and
+target-resolution semantics for fixed/dynamic mode, dungeon hierarchy, external creature scaling,
+RealPlayersOnly, and level bounds.
 
 ## Isolated SQL checks
 
@@ -37,8 +38,9 @@ The script creates a disposable datadir, executes SQL through MariaDB's bootstra
 that datadir. It executes the module-owned migration SQL and uses the core's table definitions.
 Assertions cover:
 
-- Module-owned V1-to-V2 schema migration, malformed named-index repair, and repeat application without renumbering issued items.
-- Fresh-install schema and the expanded unique key.
+- Module-owned V1-to-V2 schema migration plus generator-revision migration without renumbering issued items.
+- Malformed named-index repair, repeat application, and the six-column variant identity key.
+- Fresh-install schema matching the migrated key layout.
 - Persisted block, all resistances, item level, equip requirement, and cloned metadata.
 - Multiple equip requirements for the same base/target/formula.
 - Creature spawn alternatives, difficulty templates, and chest loot root discovery.

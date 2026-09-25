@@ -32,7 +32,8 @@ variant = strings(function('std::string VariantInsert', '// DirectCommitTransact
 roots = query_after('QueryResult roots = WorldDatabase.Query(')
 base_columns = query_after('std::string const BaseColumns =')
 sync = query_after('bool ItemScalingRegistry::SynchronizeExistingVariants()\n{\n    QueryResult result = WorldDatabase.Query(')
-migration = (module / 'data/sql/db-world/updates/2026_09_25_00_item_scaling_registry_schema.sql').read_text()
+schema_migration = (module / 'data/sql/db-world/updates/2026_09_25_00_item_scaling_registry_schema.sql').read_text()
+generator_migration = (module / 'data/sql/db-world/updates/2026_09_25_01_item_scaling_generator_revision.sql').read_text()
 base_sql = (module / 'sql/world/base/scaled_item_variant.sql').read_text()
 if 'DirectExecute' in function('bool ItemScalingRegistry::ValidateSchema()', 'bool ItemScalingRegistry::ResolveSyntheticEntryRange()'):
     raise AssertionError('Runtime schema validation must remain read-only')
@@ -41,7 +42,7 @@ stat_pairs = [value for i in range(10) for value in (3 + i, 20 + i)]
 values = [60000, 150, 50, *stat_pairs, 25.0, 50.0, 0.0, 0.0, 100, 11, 12, 13, 14, 15, 16, 77, 100]
 assert insert.count('{}') == len(values)
 clone = insert.format(*values)
-key_insert = variant.format(60000, 100, 53, 150, 1, 50)
+key_insert = variant.format(60000, 100, 53, 150, 1, 1, 50)
 
 statements = ["CREATE DATABASE fixture", "USE fixture",
               "SET SESSION sql_mode='STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION'",
@@ -59,11 +60,20 @@ for table in ['item_template', 'creature', 'creature_multispawn', 'instance_temp
     text = (args.core / 'data/sql/base/db_world' / (table + '.sql')).read_text()
     ddl = re.search(r'CREATE TABLE.*?\) ENGINE=.*?;', text, re.S).group(0)
     sql(ddl)
-# Start with the v1 module schema, preserving an already-issued item's equip level.
-current_create = base_sql[base_sql.index('CREATE TABLE'):]
-legacy = current_create.replace(
-    "    `required_level` TINYINT UNSIGNED NOT NULL COMMENT 'Resolved equip requirement; part of variant identity',\n",
-    '').replace(', `required_level`)', ')')
+# Start with the original registry schema: no required_level and no generator_revision.
+legacy_create = re.search(
+    r'CREATE TABLE IF NOT EXISTS.*?COMMENT=.*?;',
+    schema_migration,
+    re.S,
+).group(0)
+legacy = legacy_create.replace(
+    "    `required_level` TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT "
+    "'Resolved equip requirement; part of variant identity',\n",
+    '',
+).replace(
+    "        `formula_version`,\n        `required_level`\n",
+    "        `formula_version`\n",
+)
 sql(legacy)
 sql("INSERT INTO item_template (entry,class,subclass,name,Quality,InventoryType,ItemLevel,RequiredLevel,"
     "stat_type1,stat_value1,stat_type3,stat_value3,armor,block,holy_res,fire_res,nature_res,frost_res,shadow_res,arcane_res) "
@@ -71,18 +81,21 @@ sql("INSERT INTO item_template (entry,class,subclass,name,Quality,InventoryType,
     "(59000,4,4,'Existing shield',3,14,140,47,3,15,4,25,75,6,1,2,3,4,5,6)")
 sql('INSERT INTO scaled_item_variant (variant_entry,base_entry,target_effective_level,target_item_level,formula_version) '
     'VALUES (59000,100,50,140,1)')
-sql(migration)
+sql(schema_migration)
+sql(generator_migration)
 check('(SELECT required_level FROM scaled_item_variant WHERE variant_entry=59000)=47')
+check('(SELECT generator_revision FROM scaled_item_variant WHERE variant_entry=59000)=1')
 check('(SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() '
-      "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key' AND NON_UNIQUE=0)=5")
+      "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key' AND NON_UNIQUE=0)=6")
 # A malformed non-unique index with the expected name must be repairable in place.
 sql('ALTER TABLE scaled_item_variant DROP INDEX uk_variant_key, ADD KEY uk_variant_key '
-    '(base_entry,target_effective_level,target_item_level,formula_version,required_level)')
-sql(migration)
+    '(base_entry,target_effective_level,target_item_level,formula_version,generator_revision,required_level)')
+sql(generator_migration)
 check('(SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() '
-      "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key' AND NON_UNIQUE=0)=5")
-# Reapplying the migration must neither drop nor alter existing IDs/requirements.
-sql(migration)
+      "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key' AND NON_UNIQUE=0)=6")
+# Reapplying both migrations must neither drop nor alter existing IDs/requirements.
+sql(schema_migration)
+sql(generator_migration)
 check('(SELECT COUNT(*) FROM scaled_item_variant)=1')
 check('(SELECT RequiredLevel FROM item_template WHERE entry=59000)=47')
 
@@ -99,9 +112,14 @@ second_values = values.copy()
 second_values[0], second_values[2] = 60001, 53
 sql('START TRANSACTION')
 sql(insert.format(*second_values))
-sql(variant.format(60001, 100, 53, 150, 1, 53))
+sql(variant.format(60001, 100, 53, 150, 1, 1, 53))
 sql('COMMIT')
 check('(SELECT COUNT(*) FROM scaled_item_variant WHERE base_entry=100 AND target_effective_level=53)=2')
+# Same visible formula and requirement under another code generator revision must remain distinct.
+sql('INSERT INTO scaled_item_variant '
+    '(variant_entry,base_entry,target_effective_level,target_item_level,formula_version,generator_revision,required_level) '
+    'VALUES (60002,100,53,150,1,2,50)')
+check('(SELECT COUNT(*) FROM scaled_item_variant WHERE base_entry=100 AND target_effective_level=53)=3')
 
 # All spawn alternatives, a difficulty template, and chest roots resolve on the real core schema.
 sql("INSERT INTO instance_template (map,parent,script,allowMount) VALUES (33,0,'',0)")
@@ -132,7 +150,7 @@ check('(SELECT RequiredLevel FROM item_template WHERE entry=60001)=53')
 sql('RENAME TABLE scaled_item_variant TO migrated_variants')
 sql(base_sql[base_sql.index('CREATE TABLE'):])
 check('(SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() '
-      "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key')=5")
+      "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key')=6")
 sql('DROP TABLE scaled_item_variant')
 sql('RENAME TABLE migrated_variants TO scaled_item_variant')
 
@@ -155,9 +173,9 @@ with tempfile.TemporaryDirectory(prefix='item-scaling-sql-') as directory:
     print('PASS: fresh schema, v1 migration, restart idempotence, scaled persistence, requirements, discovery, recovery', flush=True)
     # Force duplicate key failure in the second half of a transaction. The first half must roll back.
     failed_values = values.copy()
-    failed_values[0] = 60002
+    failed_values[0] = 60003
     result = run(['USE fixture', 'START TRANSACTION', insert.format(*failed_values),
-                  variant.format(60002, 100, 53, 150, 1, 50), 'COMMIT'], expect_success=False)
+                  variant.format(60003, 100, 53, 150, 1, 1, 50), 'COMMIT'], expect_success=False)
     assert 'Duplicate entry' in result.stderr, result.stderr
-    run(['USE fixture', 'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM item_template WHERE entry=60002)=0,1,0))'])
+    run(['USE fixture', 'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM item_template WHERE entry=60003)=0,1,0))'])
     print('PASS: duplicate mapping causes transaction rollback; no orphan template', flush=True)

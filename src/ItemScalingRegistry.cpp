@@ -148,23 +148,24 @@ namespace
     VariantKey ReadKey(Field* fields)
     {
         return {fields[0].Get<uint32>(), fields[1].Get<uint8>(), fields[2].Get<uint16>(),
-            fields[3].Get<uint8>(), fields[4].Get<uint8>()};
+            fields[3].Get<uint8>(), fields[4].Get<uint8>(), fields[5].Get<uint8>()};
     }
 
     bool ValidKey(VariantKey const& key)
     {
         return key.baseEntry != 0 && key.targetEffectiveLevel >= 1 && key.targetEffectiveLevel <= 80 &&
             key.targetItemLevel >= 1 && key.targetItemLevel <= 300 && key.formulaVersion != 0 &&
-            key.requiredLevel >= 1 && key.requiredLevel <= 80;
+            key.generatorRevision != 0 && key.requiredLevel >= 1 && key.requiredLevel <= 80;
     }
 
     std::string VariantInsert(uint32 entry, VariantKey const& key)
     {
         return Acore::StringFormat(
             "INSERT INTO scaled_item_variant "
-            "(variant_entry,base_entry,target_effective_level,target_item_level,formula_version,required_level) "
-            "VALUES ({},{},{},{},{},{});", entry, key.baseEntry, key.targetEffectiveLevel,
-            key.targetItemLevel, key.formulaVersion, key.requiredLevel);
+            "(variant_entry,base_entry,target_effective_level,target_item_level,formula_version,"
+            "generator_revision,required_level) "
+            "VALUES ({},{},{},{},{},{},{});", entry, key.baseEntry, key.targetEffectiveLevel,
+            key.targetItemLevel, key.formulaVersion, key.generatorRevision, key.requiredLevel);
     }
 
     // DirectCommitTransaction has no success return. Verify each committed batch before proceeding.
@@ -221,7 +222,8 @@ bool ItemScalingRegistry::ValidateSchema()
             expectedType = "int";
         else if (name == "target_item_level")
             expectedType = "smallint";
-        else if (name == "target_effective_level" || name == "formula_version" || name == "required_level")
+        else if (name == "target_effective_level" || name == "formula_version" ||
+            name == "generator_revision" || name == "required_level")
             expectedType = "tinyint";
 
         if (!expectedType.empty() && (type != expectedType || columnType.find("unsigned") == std::string::npos))
@@ -236,7 +238,7 @@ bool ItemScalingRegistry::ValidateSchema()
     } while (columns->NextRow());
 
     for (char const* required : {"variant_entry", "base_entry", "target_effective_level",
-        "target_item_level", "formula_version", "required_level"})
+        "target_item_level", "formula_version", "generator_revision", "required_level"})
     {
         if (!names.count(required))
         {
@@ -282,7 +284,7 @@ bool ItemScalingRegistry::ValidateSchema()
     }
 
     std::vector<std::string> expected = {"base_entry", "target_effective_level", "target_item_level",
-        "formula_version", "required_level"};
+        "formula_version", "generator_revision", "required_level"};
     if (!indexIsUnique || indexColumns != expected)
     {
         LOG_ERROR("module.ItemScaling",
@@ -317,7 +319,7 @@ bool ItemScalingRegistry::SynchronizeExistingVariants()
 {
     QueryResult result = WorldDatabase.Query(
         "SELECT s.variant_entry,s.base_entry,s.target_effective_level,s.target_item_level,"
-        "s.formula_version,s.required_level,{} FROM scaled_item_variant s "
+        "s.formula_version,s.generator_revision,s.required_level,{} FROM scaled_item_variant s "
         "JOIN item_template b ON b.entry=s.base_entry "
         "LEFT JOIN item_template i ON i.entry=s.variant_entry WHERE i.entry IS NULL", BaseColumns);
     if (!result)
@@ -335,7 +337,15 @@ bool ItemScalingRegistry::SynchronizeExistingVariants()
             LOG_ERROR("module.ItemScaling", "Invalid persisted variant {} skipped during recovery.", entry);
             continue;
         }
-        ItemTemplate base = ReadBaseTemplate(fields + 6);
+        ItemTemplate base = ReadBaseTemplate(fields + 7);
+        if (key.generatorRevision != ITEM_SCALING_GENERATOR_REVISION)
+        {
+            LOG_ERROR("module.ItemScaling",
+                "Persisted variant {} uses generator revision {}; current revision is {}. "
+                "Missing historical templates are not regenerated with newer logic.",
+                entry, key.generatorRevision, ITEM_SCALING_GENERATOR_REVISION);
+            continue;
+        }
         ItemTemplate scaled = ItemScalingFormula::CreateScaledTemplate(&base, entry,
             key.targetEffectiveLevel, key.targetItemLevel, key.formulaVersion, key.requiredLevel);
         scaled.RequiredLevel = key.requiredLevel;
@@ -411,8 +421,8 @@ bool ItemScalingRegistry::PreStageDungeonLoot()
 
     std::set<VariantKey> existing;
     QueryResult variants = WorldDatabase.Query(
-        "SELECT base_entry,target_effective_level,target_item_level,formula_version,required_level "
-        "FROM scaled_item_variant");
+        "SELECT base_entry,target_effective_level,target_item_level,formula_version,generator_revision,"
+        "required_level FROM scaled_item_variant");
     if (variants)
     {
         do
@@ -463,7 +473,7 @@ bool ItemScalingRegistry::PreStageDungeonLoot()
             {
                 uint8 required = ItemScalingFormula::CalculateRequiredLevel(&base, target, playerLevel);
                 VariantKey key{base.ItemId, static_cast<uint8>(target), ilvl,
-                    sItemScalingConfig->FormulaVersion, required};
+                    sItemScalingConfig->FormulaVersion, ITEM_SCALING_GENERATOR_REVISION, required};
                 if (!ValidKey(key) || existing.count(key))
                     continue;
                 if (created >= sItemScalingConfig->MaxNewVariantsPerStartup ||
@@ -509,8 +519,8 @@ void ItemScalingRegistry::Initialize()
     if (!_dbSynchronized || _initialized.load())
         return;
     QueryResult result = WorldDatabase.Query(
-        "SELECT variant_entry,base_entry,target_effective_level,target_item_level,formula_version,required_level "
-        "FROM scaled_item_variant");
+        "SELECT variant_entry,base_entry,target_effective_level,target_item_level,formula_version,"
+        "generator_revision,required_level FROM scaled_item_variant");
     if (result)
     {
         do
@@ -539,7 +549,8 @@ uint32 ItemScalingRegistry::FindVariant(ItemTemplate const* baseProto, uint8 tar
     if (!baseProto || !_initialized.load())
         return 0;
     uint8 required = ItemScalingFormula::CalculateRequiredLevel(baseProto, targetEffectiveLevel, highestRealPlayerLevel);
-    VariantKey key{baseProto->ItemId, targetEffectiveLevel, targetItemLevel, formulaVersion, required};
+    VariantKey key{baseProto->ItemId, targetEffectiveLevel, targetItemLevel, formulaVersion,
+        ITEM_SCALING_GENERATOR_REVISION, required};
     auto it = _keyToEntry.find(key);
     return it == _keyToEntry.end() ? 0 : it->second;
 }

@@ -25,24 +25,33 @@ enum RequiredLevelPolicy : uint8
     REQ_POLICY_TARGET               = 2
 };
 
+// Increment only when generator implementation changes can alter persisted template values.
+// Revision 1 represents every variant generated before this field was introduced.
+inline constexpr uint8 ITEM_SCALING_GENERATOR_REVISION = 1;
+
 struct VariantKey
 {
     uint32 baseEntry{0};
     uint8  targetEffectiveLevel{0};
     uint16 targetItemLevel{0};
     uint8  formulaVersion{1};
+    uint8  generatorRevision{ITEM_SCALING_GENERATOR_REVISION};
     uint8  requiredLevel{0};
 
     bool operator<(VariantKey const& o) const
     {
-        return std::tie(baseEntry, targetEffectiveLevel, targetItemLevel, formulaVersion, requiredLevel) <
-               std::tie(o.baseEntry, o.targetEffectiveLevel, o.targetItemLevel, o.formulaVersion, o.requiredLevel);
+        return std::tie(baseEntry, targetEffectiveLevel, targetItemLevel, formulaVersion, generatorRevision,
+                   requiredLevel) <
+               std::tie(o.baseEntry, o.targetEffectiveLevel, o.targetItemLevel, o.formulaVersion,
+                   o.generatorRevision, o.requiredLevel);
     }
 
     bool operator==(VariantKey const& o) const
     {
-        return std::tie(baseEntry, targetEffectiveLevel, targetItemLevel, formulaVersion, requiredLevel) ==
-               std::tie(o.baseEntry, o.targetEffectiveLevel, o.targetItemLevel, o.formulaVersion, o.requiredLevel);
+        return std::tie(baseEntry, targetEffectiveLevel, targetItemLevel, formulaVersion, generatorRevision,
+                   requiredLevel) ==
+               std::tie(o.baseEntry, o.targetEffectiveLevel, o.targetItemLevel, o.formulaVersion,
+                   o.generatorRevision, o.requiredLevel);
     }
 };
 

@@ -16,6 +16,8 @@ readers. The module's own mutex cannot make those core containers safe for concu
 - Existing item IDs are preserved. Allocation starts above all existing template and registry IDs.
 - Required equip level is part of variant identity, so different player-level requirements cannot
   accidentally reuse the same variant.
+- The operator `FormulaVersion` and internal generator revision are separate identity fields. Existing
+  rows are revision 1, so introducing generator tracking does not regenerate or renumber current items.
 - Curves are loaded into module-owned DBC stores using `RandPropPoints.dbc`, `ScalingStatValues.dbc`,
   and their database-backed data. The core's global DBC stores are never reloaded by the module.
 - Configuration is a startup snapshot. `.reload config` logs that a restart is required.
@@ -51,13 +53,17 @@ hardware and database. First-time generation is real database work and can take 
 Total database and template memory usage increase as variants are generated; the ID cap does not bound
 the total bytes used by templates.
 
-Existing template rows are not silently regenerated. The fixed generator starts at
-`FormulaVersion = 1` as the baseline. Previously issued items retain their IDs and stored values. If
-an older release persisted incorrect stats, restoring a backup or deliberately repairing those owned
-rows requires a separate reviewed data operation. Change `FormulaVersion` when changing scaling
-settings that should generate a new set of variants, including `PreserveNonZeroStats`. Old formula
-versions remain available for already-issued items. Recovery of a missing template uses the current
-formula implementation and saved level/requirement; historical formulas are not archived.
+Existing template rows are not silently regenerated. `FormulaVersion = 1` remains the operator
+baseline, while generator revision 1 records the current code implementation separately. The migration
+maps every existing row to generator revision 1 and does not change synthetic IDs or `item_template`
+values. Future code changes that alter generated template values can increment the internal revision
+without requiring administrators to change `FormulaVersion`. Change `FormulaVersion` only when
+changing scaling settings that should intentionally create a new variant family, including
+`PreserveNonZeroStats`.
+
+Previously issued items retain their IDs and stored values. A missing template from an older generator
+revision is not reconstructed with newer generator logic; that prevents historical IDs from silently
+changing meaning.
 
 ## Behavior and limits
 
