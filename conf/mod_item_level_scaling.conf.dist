@@ -185,10 +185,10 @@ ItemScaling.PreserveNonZeroStats = 1
 #                     "target-capped-player" - min(L_target, H) clamped to 1..80
 #                     "player"               - exactly H
 #                     "target"               - exactly L_target
-#        Default:     "target-capped-player"
+#        Default:     "target"
 #
 
-ItemScaling.RequiredLevel.Policy = "target-capped-player"
+ItemScaling.RequiredLevel.Policy = "target"
 
 #
 #    Dynamic Scaling Floor and Ceiling
@@ -250,12 +250,13 @@ ItemScaling.PreStageDungeonLoot = 1
 #        Description: Level interval between pre-staged scaling tiers (e.g. 2 means tiers at
 #                     every 2 levels). Runtime targets round down to the same bracket; MaxLevel
 #                     is always included. Native level matches retain their original item.
-#                     Use 1 for exact target levels. Larger steps reduce database size.
-#        Default:     2
+#                     Default 1 keeps item and RequiredLevel targets exactly aligned with the
+#                     mob/boss target level. Larger steps reduce database size.
+#        Default:     1
 #        Range:       1 - 10
 #
 
-ItemScaling.BracketStep = 2
+ItemScaling.BracketStep = 1
 
 #
 #    ItemScaling.FormulaVersion

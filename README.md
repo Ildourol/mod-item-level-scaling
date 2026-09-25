@@ -36,7 +36,7 @@ module table is reported and scaling is disabled for that run.
 
 ```ini
 ItemScaling.PreStageDungeonLoot = 1
-ItemScaling.BracketStep = 2
+ItemScaling.BracketStep = 1
 ItemScaling.MaxNewVariantsPerStartup = 25000
 ItemScaling.SyntheticEntry.Maximum = 2000000
 ```
@@ -64,8 +64,9 @@ formula implementation and saved level/requirement; historical formulas are not 
   excluded when `RealPlayersOnly = 1`. If no eligible player exists, scaling is skipped.
 - `fixed` uses that player's level; `dynamic` uses the configured floor/ceiling or an already-scaled
   creature's level.
-- Native-level matches keep their original item. Other targets round down to the configured bracket;
-  `MaxLevel` is always included. Use `BracketStep = 1` for exact target levels.
+- Native-level matches keep their original item. By default, generated item levels and
+  `RequiredLevel` values follow the mob/boss target level exactly. Larger `BracketStep` values round
+  other targets down to the configured bracket; `MaxLevel` is always included.
 - Pre-staging includes upward and downward levels and the configured dynamic window, including distinct
   equip requirements. Externally scaled targets outside that window can safely miss.
 - Items are discovered from spawned instance creatures/gameobjects and their loot references.

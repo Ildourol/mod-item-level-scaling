@@ -236,7 +236,7 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
             uint8 currentCreatureLevel = creature->GetLevel();
             bool isCreatureLevelScaled = (currentCreatureLevel < cMin || currentCreatureLevel > cSrc);
 
-            if (isCreatureLevelScaled && !sItemScalingConfig->RealPlayersOnly)
+            if (isCreatureLevelScaled)
             {
                 // Maintain 100% exact parity with the creature's scaled level in the world
                 lTarget = currentCreatureLevel;

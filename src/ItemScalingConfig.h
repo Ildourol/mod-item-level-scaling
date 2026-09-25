@@ -40,7 +40,7 @@ public:
     bool ScaleHeirloom{false};
 
     bool PreserveNonZeroStats{true};
-    RequiredLevelPolicy ReqLevelPolicy{REQ_POLICY_TARGET_CAPPED_PLAYER};
+    RequiredLevelPolicy ReqLevelPolicy{REQ_POLICY_TARGET};
 
     uint8 DynamicFloorDungeons{5};
     uint8 DynamicCeilingDungeons{3};
@@ -54,7 +54,7 @@ public:
     bool PreStageDungeonLoot{true};
     uint32 MaxNewVariantsPerStartup{25000};
     uint32 SyntheticEntryMaximum{2000000};
-    uint8 BracketStep{2};
+    uint8 BracketStep{1};
     uint8 FormulaVersion{1};
 
     std::unordered_set<uint8> ExcludedLevels;
