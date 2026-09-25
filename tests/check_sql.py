@@ -53,7 +53,7 @@ def sql(statement):
 def check(condition):
     sql('INSERT INTO assertions VALUES (IF((' + condition + '),1,0))')
 
-for table in ['item_template', 'creature', 'instance_template', 'creature_template',
+for table in ['item_template', 'creature', 'creature_multispawn', 'instance_template', 'creature_template',
               'creature_loot_template', 'reference_loot_template', 'gameobject_loot_template',
               'gameobject', 'gameobject_template']:
     text = (args.core / 'data/sql/base/db_world' / (table + '.sql')).read_text()
@@ -106,7 +106,8 @@ check('(SELECT COUNT(*) FROM scaled_item_variant WHERE base_entry=100 AND target
 # All spawn alternatives, a difficulty template, and chest roots resolve on the real core schema.
 sql("INSERT INTO instance_template (map,parent,script,allowMount) VALUES (33,0,'',0)")
 sql('INSERT INTO creature_template (entry,difficulty_entry_1,lootid) VALUES (10,11,100),(11,0,101),(20,0,102),(30,0,103)')
-sql('INSERT INTO creature (guid,id1,id2,id3,map) VALUES (1,10,20,30,33)')
+sql('INSERT INTO creature (guid,id,map) VALUES (1,10,33)')
+sql('INSERT INTO creature_multispawn (spawnId,entry) VALUES (1,20),(1,30)')
 for entry, item in [(100,201),(101,202),(102,203),(103,204)]:
     sql(f'INSERT INTO creature_loot_template (Entry,Item,Reference,Chance) VALUES ({entry},{item},0,100)')
 sql('INSERT INTO gameobject_template (entry,type,Data1) VALUES (40,3,104)')
