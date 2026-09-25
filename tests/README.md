@@ -38,7 +38,7 @@ The script creates a disposable datadir, executes SQL through MariaDB's bootstra
 that datadir. It executes the module-owned migration SQL and uses the core's table definitions.
 Assertions cover:
 
-- Module-owned V1-to-V2 schema migration plus generator-revision migration without renumbering issued items.
+- Module-owned V1-to-V2 schema migration plus generator-revision migration without renumbering or changing issued items.
 - Malformed named-index repair, repeat application, and the six-column variant identity key.
 - Fresh-install schema matching the migrated key layout.
 - Persisted block, all resistances, item level, equip requirement, and cloned metadata.

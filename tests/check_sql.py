@@ -85,6 +85,13 @@ sql(schema_migration)
 sql(generator_migration)
 check('(SELECT required_level FROM scaled_item_variant WHERE variant_entry=59000)=47')
 check('(SELECT generator_revision FROM scaled_item_variant WHERE variant_entry=59000)=1')
+check('(SELECT COUNT(*) FROM item_template)=2')
+check('(SELECT ItemLevel=140 AND RequiredLevel=47 AND armor=75 AND block=6 '
+      'AND holy_res=1 AND fire_res=2 AND nature_res=3 AND frost_res=4 '
+      'AND shadow_res=5 AND arcane_res=6 FROM item_template WHERE entry=59000)')
+check('(SELECT base_entry=100 AND target_effective_level=50 AND target_item_level=140 '
+      'AND formula_version=1 AND generator_revision=1 AND required_level=47 '
+      'FROM scaled_item_variant WHERE variant_entry=59000)')
 check('(SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() '
       "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key' AND NON_UNIQUE=0)=6")
 # A malformed non-unique index with the expected name must be repairable in place.
@@ -98,6 +105,7 @@ sql(schema_migration)
 sql(generator_migration)
 check('(SELECT COUNT(*) FROM scaled_item_variant)=1')
 check('(SELECT RequiredLevel FROM item_template WHERE entry=59000)=47')
+check('(SELECT generator_revision FROM scaled_item_variant WHERE variant_entry=59000)=1')
 
 sql('START TRANSACTION')
 sql(clone)
@@ -116,9 +124,12 @@ sql(variant.format(60001, 100, 53, 150, 1, 1, 53))
 sql('COMMIT')
 check('(SELECT COUNT(*) FROM scaled_item_variant WHERE base_entry=100 AND target_effective_level=53)=2')
 # Same visible formula and requirement under another code generator revision must remain distinct.
-sql('INSERT INTO scaled_item_variant '
-    '(variant_entry,base_entry,target_effective_level,target_item_level,formula_version,generator_revision,required_level) '
-    'VALUES (60002,100,53,150,1,2,50)')
+third_values = values.copy()
+third_values[0] = 60002
+sql('START TRANSACTION')
+sql(insert.format(*third_values))
+sql(variant.format(60002, 100, 53, 150, 1, 2, 50))
+sql('COMMIT')
 check('(SELECT COUNT(*) FROM scaled_item_variant WHERE base_entry=100 AND target_effective_level=53)=3')
 
 # All spawn alternatives, a difficulty template, and chest roots resolve on the real core schema.
