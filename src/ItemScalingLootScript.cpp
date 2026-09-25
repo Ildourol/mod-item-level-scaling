@@ -283,13 +283,12 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
     lTarget = ItemScalingSafety::Bracket(lTarget, sItemScalingConfig->MinLevel,
         sItemScalingConfig->MaxLevel, sItemScalingConfig->BracketStep);
 
-    // 4. Scale all eligible items currently in loot->items
-    for (LootItem& item : loot->items)
+    auto scaleLootItem = [&](LootItem& item)
     {
         ItemTemplate const* baseProto = sObjectMgr->GetItemTemplate(item.itemid);
         if (!baseProto || !ItemScalingFormula::IsScalableEquipment(baseProto))
         {
-            continue;
+            return;
         }
 
         if (!sItemScalingConfig->IsQualityEnabled(baseProto->Quality))
@@ -299,7 +298,7 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
                 LOG_INFO("module.ItemScaling", "ItemScaling: Skipped item {} '{}' (Quality {} not enabled)",
                     baseProto->ItemId, baseProto->Name1, baseProto->Quality);
             }
-            continue;
+            return;
         }
 
         if (sItemScalingConfig->IsItemExcluded(baseProto->ItemId))
@@ -309,7 +308,7 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
                 LOG_INFO("module.ItemScaling", "ItemScaling: Skipped item {} '{}' (Item ID explicitly excluded)",
                     baseProto->ItemId, baseProto->Name1);
             }
-            continue;
+            return;
         }
 
         // Determine item's original reference level
@@ -328,7 +327,7 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
                 LOG_INFO("module.ItemScaling", "ItemScaling: Skipped item {} '{}' (Native level {} matches target level {}, no scaling needed)",
                     baseProto->ItemId, baseProto->Name1, origRefLevel, lTarget);
             }
-            continue;
+            return;
         }
 
         // Check if item's native level is explicitly configured as excluded
@@ -339,7 +338,7 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
                 LOG_INFO("module.ItemScaling", "ItemScaling: Skipped item {} '{}' (Native level {} is in ExcludedLevels)",
                     baseProto->ItemId, baseProto->Name1, origRefLevel);
             }
-            continue;
+            return;
         }
 
         // Directional scaling checks
@@ -350,7 +349,7 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
                 LOG_INFO("module.ItemScaling", "ItemScaling: Skipped item {} '{}' (ScaleDown disabled: lTarget {} < origRef {})",
                     baseProto->ItemId, baseProto->Name1, lTarget, origRefLevel);
             }
-            continue;
+            return;
         }
         if (!sItemScalingConfig->ScaleUp && lTarget > origRefLevel)
         {
@@ -359,14 +358,14 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
                 LOG_INFO("module.ItemScaling", "ItemScaling: Skipped item {} '{}' (ScaleUp disabled: lTarget {} > origRef {})",
                     baseProto->ItemId, baseProto->Name1, lTarget, origRefLevel);
             }
-            continue;
+            return;
         }
 
         // Calculate target ItemLevel via Blizzard baseline model
         uint16 targetIlvl = sItemScalingBaseline->CalculateTargetItemLevel(baseProto, lTarget, origRefLevel);
         if (targetIlvl == 0)
         {
-            continue;
+            return;
         }
 
         // If target matches original exactly, no variant needed
@@ -377,7 +376,7 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
                 LOG_INFO("module.ItemScaling", "ItemScaling: Skipped item {} '{}' (Already matches target lvl {} and ilvl {})",
                     baseProto->ItemId, baseProto->Name1, lTarget, targetIlvl);
             }
-            continue;
+            return;
         }
 
         // Only publish templates already loaded and validated by the core.
@@ -405,6 +404,18 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
                     baseProto->ItemId, baseProto->Name1, variantEntry, lTarget, targetIlvl, baseProto->ItemLevel);
             }
         }
+    };
+
+    // Scale normal and quest-required drops. AzerothCore stores quest-required
+    // loot in a separate vector that follows the same LootItem shape.
+    for (LootItem& item : loot->items)
+    {
+        scaleLootItem(item);
+    }
+
+    for (LootItem& item : loot->quest_items)
+    {
+        scaleLootItem(item);
     }
 }
 

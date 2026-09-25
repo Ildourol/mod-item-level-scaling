@@ -47,7 +47,7 @@ public:
     uint8 DynamicFloorRaids{5};
     uint8 DynamicCeilingRaids{3};
 
-    bool UseAutoBalanceSettings{true};
+    bool UseAutoBalanceSettings{false};
     bool AutoSyntheticEntry{true};
     uint32 SyntheticEntryStart{60000};
     uint32 SyntheticEntryAutoOffset{1000};
