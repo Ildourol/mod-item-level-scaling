@@ -312,6 +312,9 @@ bool ItemScalingRegistry::ResolveSyntheticEntryRange()
     {
         LOG_WARN("module.ItemScaling", "Synthetic ID limit reached; no new variants will be staged.");
     }
+    LOG_INFO("server.loading",
+        "ItemScaling: synthetic IDs highest item {}, highest variant {}, next {}, maximum {}.",
+        highestItem, highestVariant, _nextSyntheticEntry, sItemScalingConfig->SyntheticEntryMaximum);
     return true;
 }
 
@@ -510,6 +513,10 @@ void ItemScalingRegistry::OnLoadCustomDatabaseTable()
         LOG_ERROR("module.ItemScaling", "Startup prerequisites failed; item scaling disabled for this run.");
         return;
     }
+    LOG_INFO("server.loading",
+        "ItemScaling: formula version {}, generator revision {}, target levels {}-{}, bracket {}.",
+        sItemScalingConfig->FormulaVersion, ITEM_SCALING_GENERATOR_REVISION,
+        sItemScalingConfig->MinLevel, sItemScalingConfig->MaxLevel, sItemScalingConfig->BracketStep);
     sItemScalingBaseline->BuildBaseline();
     _dbSynchronized = SynchronizeExistingVariants() && PreStageDungeonLoot();
 }
@@ -521,6 +528,8 @@ void ItemScalingRegistry::Initialize()
     QueryResult result = WorldDatabase.Query(
         "SELECT variant_entry,base_entry,target_effective_level,target_item_level,formula_version,"
         "generator_revision,required_level FROM scaled_item_variant");
+    std::size_t currentRevisionCount = 0;
+    std::size_t historicalRevisionCount = 0;
     if (result)
     {
         do
@@ -537,10 +546,17 @@ void ItemScalingRegistry::Initialize()
                 continue;
             }
             _keyToEntry.emplace(key, entry);
+            if (key.generatorRevision == ITEM_SCALING_GENERATOR_REVISION)
+                ++currentRevisionCount;
+            else
+                ++historicalRevisionCount;
         } while (result->NextRow());
     }
     _initialized.store(true);
-    LOG_INFO("server.loading", "ItemScaling: indexed {} validated variants; gameplay is lookup-only.", _keyToEntry.size());
+    LOG_INFO("server.loading",
+        "ItemScaling: indexed {} validated variants ({} current generator revision, {} historical); "
+        "gameplay is lookup-only.",
+        _keyToEntry.size(), currentRevisionCount, historicalRevisionCount);
 }
 
 uint32 ItemScalingRegistry::FindVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,
