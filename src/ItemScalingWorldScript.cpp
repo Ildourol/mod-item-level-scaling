@@ -11,6 +11,7 @@ namespace
 {
     // Stable module salt: changes to client-visible synthetic item metadata can bump this value deliberately.
     constexpr uint32 ITEM_SCALING_CLIENT_CACHE_SALT = 0x49534C01u;
+    constexpr uint32 ITEM_SCALING_IDENTITY_REPAIR_CACHE_MARKER = 0x49535201u;
 }
 
 ItemScalingWorldScript::ItemScalingWorldScript()
@@ -26,7 +27,13 @@ ItemScalingWorldScript::ItemScalingWorldScript()
 void ItemScalingWorldScript::OnBeforeFinalizePlayerWorldSession(uint32& cacheVersion)
 {
     if (sItemScalingConfig->Enable)
+    {
         cacheVersion ^= ITEM_SCALING_CLIENT_CACHE_SALT;
+        // A repair boot still serves old loaded metadata for owned items. Give that boot a distinct
+        // cache version, so the following clean restart invalidates those transitional responses.
+        if (sItemScalingRegistry->RequiresIdentityRestart())
+            cacheVersion ^= ITEM_SCALING_IDENTITY_REPAIR_CACHE_MARKER;
+    }
 }
 
 void ItemScalingWorldScript::OnLoadCustomDatabaseTable()
@@ -51,8 +58,7 @@ void ItemScalingWorldScript::OnBeforeWorldInitialized()
         return;
     }
 
-    // Re-publish persisted scaled fields on top of the core-validated base template metadata,
-    // then index the variants before the world network becomes connectable.
+    // Validate and index templates loaded normally by the core; never publish templates here.
     sItemScalingRegistry->Initialize();
 }
 

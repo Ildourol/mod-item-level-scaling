@@ -2,6 +2,7 @@
 #include <cassert>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 
 int main()
 {
@@ -31,6 +32,15 @@ int main()
     lookup[second] = 60001;
     lookup[otherFormula] = 60002;
     lookup[otherGenerator] = 60003;
+
+    std::unordered_set<VariantKey, VariantKeyHash> pending;
+    for (unsigned i = 0; i < 500; ++i)
+        pending.insert(first);
+    assert(pending.size() == 1);
+    pending.insert(second);
+    pending.insert(otherFormula);
+    pending.insert(otherGenerator);
+    assert(pending.size() == 4);
 
     assert(lookup.size() == 4);
     assert(lookup.at(first) == 60000);

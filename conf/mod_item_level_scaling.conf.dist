@@ -235,20 +235,22 @@ ItemScaling.SyntheticEntry.Start = "auto"
 ItemScaling.SyntheticEntry.AutoOffset = 1000
 
 #
-#    ItemScaling.PreStageDungeonLoot
-#        Description: Pre-generate and synchronize scalable dungeon/raid equipment variants into
-#                     item_template before the core loads its template stores.
-#                     Gameplay never creates or inserts templates. A missing variant leaves base loot unchanged.
-#        Default:     1 - Enabled (bounded startup generation)
+#    ItemScaling.DemandLedger.Enable
+#        Description: Record exact gameplay requests asynchronously and materialize them next startup.
+#                     The first unseen combination drops the original item; restart before it can scale.
+#                     No dungeon-wide pre-generation or runtime template publication occurs.
+#                     If absent, the deprecated ItemScaling.PreStageDungeonLoot value is used.
+#                     An explicit new option overrides the legacy value.
+#        Default:     1 - Record and materialize demand
 #                     0 - Existing persisted variants only
 #
 
-ItemScaling.PreStageDungeonLoot = 1
+ItemScaling.DemandLedger.Enable = 1
 
 #
 #    ItemScaling.BracketStep
-#        Description: Level interval between pre-staged scaling tiers (e.g. 2 means tiers at
-#                     every 2 levels). Runtime targets round down to the same bracket; MaxLevel
+#        Description: Level interval between runtime scaling tiers (e.g. 2 means tiers at
+#                     every 2 levels). Runtime targets round down to this bracket; MaxLevel
 #                     is always included. Native level matches retain their original item.
 #                     Default 1 keeps item and RequiredLevel targets exactly aligned with the
 #                     mob/boss target level. Larger steps reduce database size.
@@ -261,6 +263,8 @@ ItemScaling.BracketStep = 1
 #
 #    ItemScaling.FormulaVersion
 #        Description: Version tag for the scaling curve calculation. Preserved in database records.
+#                     Increment when changing PreserveNonZeroStats or formula input data.
+#                     Pending requests from an obsolete family are retired with a startup warning.
 #        Default:     1
 #
 
@@ -292,10 +296,11 @@ ItemScaling.ExcludedItemIds = ""
 ItemScaling.Debug = 0
 
 # Maximum new templates per startup (1..250000). Existing templates do not count toward this limit.
-# Generation resumes on later restarts. First boot can leave some loot unstaged.
+# Maximum pending requested variants materialized per startup; excess demand waits for later restarts.
 ItemScaling.MaxNewVariantsPerStartup = 25000
 
-# Highest ID the module may allocate or restore (60000..10000000).
+# Highest ID the module may allocate (60000..10000000).
+# Recovery preserves issued IDs even above a newly lowered allocation limit.
 # The core's fast lookup vector grows with the highest item ID. Existing IDs are never renumbered.
 ItemScaling.SyntheticEntry.Maximum = 2000000
 

@@ -34,24 +34,38 @@ def query_in_function(name, next_name, marker):
 insert = strings(function('static std::string BuildItemTemplateInsertSQL', '\nnamespace'))
 insert = insert[insert.index('INSERT INTO'):]
 variant = strings(function('std::string VariantInsert', '// DirectCommitTransaction'))
-roots = query_after('QueryResult roots = WorldDatabase.Query(')
+request_insert = query_after('WorldDatabase.Execute(')
+key_predicate = strings(function('std::string KeyPredicate', 'std::string DeleteRequest'))
+completed_delete = strings(function('std::string DeleteCompletedRequest', 'std::string VariantInsert'))
 base_columns = query_after('std::string const BaseColumns =')
 sync = query_in_function(
     'bool ItemScalingRegistry::SynchronizeExistingVariants()',
-    'bool ItemScalingRegistry::PreStageDungeonLoot()',
+    'bool ItemScalingRegistry::MaterializePendingRequests()',
     'QueryResult result = WorldDatabase.Query(',
 )
 schema_migration = (module / 'data/sql/db-world/updates/2026_09_25_00_item_scaling_registry_schema.sql').read_text()
 generator_migration = (module / 'data/sql/db-world/updates/2026_09_25_01_item_scaling_generator_revision.sql').read_text()
+ledger_migration = (module / 'data/sql/db-world/updates/2026_09_26_00_item_scaling_demand_ledger.sql').read_text()
 base_sql = (module / 'sql/world/base/scaled_item_variant.sql').read_text()
 if 'DirectExecute' in function('bool ItemScalingRegistry::ValidateSchema()', 'bool ItemScalingRegistry::ResolveSyntheticEntryRange()'):
     raise AssertionError('Runtime schema validation must remain read-only')
 
 stat_pairs = [value for i in range(10) for value in (3 + i, 20 + i)]
-values = [60000, 150, 50, *stat_pairs, 25.0, 50.0, 0.0, 0.0, 100, 11, 12, 13, 14, 15, 16, 77, 100]
+identity = [4, 4, -1, -1, 12345, 14, 1]
+values = [60000, 4, 4, -1, 12345, 14, 150, 50, *stat_pairs, 25.0, 50.0, 0.0, 0.0,
+          100, 11, 12, 13, 14, 15, 16, -1, 1, 77, 100]
 assert insert.count('{}') == len(values)
 clone = insert.format(*values)
-key_insert = variant.format(60000, 100, 53, 150, 1, 1, 50)
+def mapping(entry, required=50, formula=1, revision=1):
+    return variant.format(entry, 100, 53, 150, formula, revision, required, *identity, 1, entry)
+
+def request(required=50, formula=1, revision=1, base=100):
+    return request_insert.format(base, 53, 150, formula, revision, required, *identity, 1)
+
+def delete_request(required=50, formula=1, revision=1, entry=60000):
+    return completed_delete.format(key_predicate.format(100, 53, 150, formula, revision, required), entry)
+
+key_insert = mapping(60000)
 
 statements = ["CREATE DATABASE fixture", "USE fixture",
               "SET SESSION sql_mode='STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION'",
@@ -63,9 +77,7 @@ def sql(statement):
 def check(condition):
     sql('INSERT INTO assertions VALUES (IF((' + condition + '),1,0))')
 
-for table in ['item_template', 'creature', 'creature_multispawn', 'instance_template', 'creature_template',
-              'creature_loot_template', 'reference_loot_template', 'gameobject_loot_template',
-              'gameobject', 'gameobject_template']:
+for table in ['item_template']:
     text = (args.core / 'data/sql/base/db_world' / (table + '.sql')).read_text()
     ddl = re.search(r'CREATE TABLE.*?\) ENGINE=.*?;', text, re.S).group(0)
     sql(ddl)
@@ -92,6 +104,9 @@ sql('INSERT INTO scaled_item_variant (variant_entry,base_entry,target_effective_
     'VALUES (59000,100,50,140,1)')
 sql(schema_migration)
 sql(generator_migration)
+sql('CREATE TABLE issued_item_before AS SELECT * FROM item_template WHERE entry=59000')
+sql(ledger_migration)
+check('(SELECT base_class IS NULL AND preserve_nonzero_stats IS NULL FROM scaled_item_variant WHERE variant_entry=59000)')
 check('(SELECT required_level FROM scaled_item_variant WHERE variant_entry=59000)=47')
 check('(SELECT generator_revision FROM scaled_item_variant WHERE variant_entry=59000)=1')
 check('(SELECT COUNT(*) FROM item_template)=2')
@@ -116,45 +131,81 @@ check('(SELECT COUNT(*) FROM scaled_item_variant)=1')
 check('(SELECT RequiredLevel FROM item_template WHERE entry=59000)=47')
 check('(SELECT generator_revision FROM scaled_item_variant WHERE variant_entry=59000)=1')
 
+# The complete six-field pending primary key collapses repeats across callers/processes.
+for _ in range(5):
+    sql(request())
+check('(SELECT COUNT(*) FROM scaled_item_variant_request)=1')
+sql(request(required=53))
+sql(request(formula=2))
+sql(request(revision=2))
+check('(SELECT COUNT(*) FROM scaled_item_variant_request)=4')
+check('(SELECT base_sound_override_subclass=-1 AND base_material=-1 AND base_displayid=12345 '
+      'AND preserve_nonzero_stats=1 FROM scaled_item_variant_request WHERE formula_version=1 '
+      'AND generator_revision=1 AND required_level=50)')
+
 sql('START TRANSACTION')
 sql(clone)
 sql(key_insert)
+sql(delete_request())
 sql('COMMIT')
 check('(SELECT COUNT(*) FROM item_template WHERE entry=60000 AND ItemLevel=150 AND RequiredLevel=50 '
       'AND armor=100 AND block=77 AND holy_res=11 AND fire_res=12 AND nature_res=13 '
       'AND frost_res=14 AND shadow_res=15 AND arcane_res=16 AND stat_value10=29)=1')
 check("(SELECT name FROM item_template WHERE entry=60000)='Base shield'")
-# Same base/target/formula but another equip requirement must coexist.
+check('(SELECT class=4 AND subclass=4 AND SoundOverrideSubclass=-1 AND Material=-1 AND displayid=12345 '
+      'AND InventoryType=14 AND sheath=1 FROM item_template WHERE entry=60000)')
+check('(SELECT COUNT(*) FROM scaled_item_variant_request)=3')
+check('(SELECT base_displayid=12345 AND base_material=-1 AND preserve_nonzero_stats=1 '
+      'FROM scaled_item_variant WHERE variant_entry=60000)')
+# The issued item and its durable mapping remain byte-for-byte unchanged by the new migration.
+sql(ledger_migration)
+check('(SELECT COUNT(*) FROM item_template WHERE entry=59000 AND ItemLevel=140 AND armor=75)=1')
+check('(SELECT variant_entry=59000 AND required_level=47 AND generator_revision=1 '
+      'FROM scaled_item_variant WHERE variant_entry=59000)')
+item_columns = re.findall(r'^\s*`([^`]+)`', ddl, re.M)
+check('(SELECT COUNT(*) FROM issued_item_before old JOIN item_template current ON old.entry=current.entry WHERE '
+      + ' AND '.join(f'old.`{column}` <=> current.`{column}`' for column in item_columns) + ')=1')
+
+
 second_values = values.copy()
-second_values[0], second_values[2] = 60001, 53
+second_values[0], second_values[7] = 60001, 53
 sql('START TRANSACTION')
 sql(insert.format(*second_values))
-sql(variant.format(60001, 100, 53, 150, 1, 1, 53))
+sql(mapping(60001, required=53))
+sql(delete_request(required=53, entry=60001))
 sql('COMMIT')
-check('(SELECT COUNT(*) FROM scaled_item_variant WHERE base_entry=100 AND target_effective_level=53)=2')
-# Same visible formula and requirement under another code generator revision must remain distinct.
 third_values = values.copy()
 third_values[0] = 60002
 sql('START TRANSACTION')
 sql(insert.format(*third_values))
-sql(variant.format(60002, 100, 53, 150, 1, 2, 50))
+sql(mapping(60002, revision=2))
+sql(delete_request(revision=2, entry=60002))
 sql('COMMIT')
 check('(SELECT COUNT(*) FROM scaled_item_variant WHERE base_entry=100 AND target_effective_level=53)=3')
+# A missing base is deferred: no template or mapping is inserted and its demand is retained.
+sql(request(base=999))
+check('(SELECT COUNT(*) FROM scaled_item_variant_request WHERE base_entry=999)=1')
+# INSERT ... SELECT returning zero rows cannot commit a mapping or consume the pending request.
+missing_values = values.copy()
+missing_values[0], missing_values[-1] = 60004, 999
+sql('START TRANSACTION')
+sql(insert.format(*missing_values))
+sql(variant.format(60004, 999, 53, 150, 1, 1, 50, *identity, 1, 60004))
+sql(completed_delete.format(key_predicate.format(999, 53, 150, 1, 1, 50), 60004))
+sql('COMMIT')
+check('(SELECT COUNT(*) FROM item_template WHERE entry=60004)=0')
+check('(SELECT COUNT(*) FROM scaled_item_variant WHERE variant_entry=60004)=0')
+check('(SELECT COUNT(*) FROM scaled_item_variant_request WHERE base_entry=999)=1')
+# Snapshot widths/signs match the canonical item schema, with nullable legacy recovery fields.
+for snapshot, original in [('base_class', 'class'), ('base_subclass', 'subclass'),
+                           ('base_sound_override_subclass', 'SoundOverrideSubclass'),
+                           ('base_material', 'Material'), ('base_displayid', 'displayid'),
+                           ('base_inventory_type', 'InventoryType'), ('base_sheath', 'sheath')]:
+    check("(SELECT s.COLUMN_TYPE=i.COLUMN_TYPE FROM information_schema.COLUMNS s "
+          "JOIN information_schema.COLUMNS i ON i.TABLE_SCHEMA=s.TABLE_SCHEMA "
+          "WHERE s.TABLE_SCHEMA=DATABASE() AND s.TABLE_NAME='scaled_item_variant_request' "
+          f"AND s.COLUMN_NAME='{snapshot}' AND i.TABLE_NAME='item_template' AND i.COLUMN_NAME='{original}')")
 
-# All spawn alternatives, a difficulty template, and chest roots resolve on the real core schema.
-sql("INSERT INTO instance_template (map,parent,script,allowMount) VALUES (33,0,'',0)")
-sql('INSERT INTO creature_template (entry,difficulty_entry_1,lootid) VALUES (10,11,100),(11,0,101),(20,0,102),(30,0,103)')
-sql('INSERT INTO creature (guid,id,map) VALUES (1,10,33)')
-sql('INSERT INTO creature_multispawn (spawnId,entry) VALUES (1,20),(1,30)')
-for entry, item in [(100,201),(101,202),(102,203),(103,204)]:
-    sql(f'INSERT INTO creature_loot_template (Entry,Item,Reference,Chance) VALUES ({entry},{item},0,100)')
-sql('INSERT INTO gameobject_template (entry,type,Data1) VALUES (40,3,104)')
-sql('INSERT INTO gameobject (guid,id,map) VALUES (2,40,33)')
-sql('INSERT INTO gameobject_loot_template (Entry,Item,Reference,Chance) VALUES (104,205,-500,100)')
-sql('INSERT INTO reference_loot_template (Entry,Item,Reference,Chance) VALUES (500,206,-501,100),(501,207,0,100)')
-sql('CREATE TABLE root_results AS ' + roots)
-check('(SELECT COUNT(*) FROM root_results)=5')
-check('(SELECT COUNT(*) FROM root_results WHERE Reference=-500)=1')
 # Exercise the shared partial-template projection, including a stat gap.
 sql('CREATE TABLE base_projection AS SELECT ' + base_columns + ' FROM item_template b WHERE entry=100')
 check('(SELECT stat_value3 FROM base_projection)=20')
@@ -162,17 +213,31 @@ sql('DELETE FROM item_template WHERE entry=60001')
 sql('CREATE TABLE recovery_candidates AS ' + sync.format(base_columns).replace('s.variant_entry,', 's.variant_entry AS recovered_entry,', 1)
     .replace('s.base_entry,', 's.base_entry AS recovered_base,', 1))
 check('(SELECT COUNT(*) FROM recovery_candidates)=1')
+check('(SELECT recovered_entry=60001 AND base_displayid=12345 FROM recovery_candidates)')
 # Restore from the existing saved key without allocating or changing its ID.
 sql(insert.format(*second_values))
 check('(SELECT RequiredLevel FROM item_template WHERE entry=60001)=53')
 
+# Historical missing rows are visible to recovery but must be rejected by the C++ family guard.
+sql('DELETE FROM item_template WHERE entry=60002')
+sql('CREATE TABLE historical_candidates AS ' + sync.format(base_columns)
+    .replace('s.variant_entry,', 's.variant_entry AS recovered_entry,', 1)
+    .replace('s.base_entry,', 's.base_entry AS recovered_base,', 1))
+check('(SELECT recovered_entry=60002 AND generator_revision=2 FROM historical_candidates)')
+check('(SELECT COUNT(*) FROM item_template WHERE entry=60002)=0')
+recovery_body = function('bool ItemScalingRegistry::SynchronizeExistingVariants()',
+                         'bool ItemScalingRegistry::MaterializePendingRequests()')
+assert recovery_body.index('key.generatorRevision != ITEM_SCALING_GENERATOR_REVISION') < recovery_body.index('CreateScaledTemplate')
+
 # Fresh base SQL also agrees with the migrated key layout.
-sql('RENAME TABLE scaled_item_variant TO migrated_variants')
+sql('RENAME TABLE scaled_item_variant TO migrated_variants, scaled_item_variant_request TO migrated_requests')
 sql(base_sql[base_sql.index('CREATE TABLE'):])
 check('(SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() '
       "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key')=6")
-sql('DROP TABLE scaled_item_variant')
-sql('RENAME TABLE migrated_variants TO scaled_item_variant')
+check('(SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() '
+      "AND TABLE_NAME='scaled_item_variant_request' AND INDEX_NAME='PRIMARY')=6")
+sql('DROP TABLE scaled_item_variant, scaled_item_variant_request')
+sql('RENAME TABLE migrated_variants TO scaled_item_variant, migrated_requests TO scaled_item_variant_request')
 
 with tempfile.TemporaryDirectory(prefix='item-scaling-sql-') as directory:
     env = os.environ.copy()
@@ -190,12 +255,15 @@ with tempfile.TemporaryDirectory(prefix='item-scaling-sql-') as directory:
             raise AssertionError(result.stdout + result.stderr)
         return result
     run(statements)
-    print('PASS: fresh schema, v1 migration, restart idempotence, scaled persistence, requirements, discovery, recovery', flush=True)
+    print('PASS: fresh schema, upgrades, pending dedupe/identity, materialization, snapshots, recovery SQL', flush=True)
     # Force duplicate key failure in the second half of a transaction. The first half must roll back.
     failed_values = values.copy()
     failed_values[0] = 60003
+    run(['USE fixture', request()])
     result = run(['USE fixture', 'START TRANSACTION', insert.format(*failed_values),
-                  variant.format(60003, 100, 53, 150, 1, 1, 50), 'COMMIT'], expect_success=False)
+                  mapping(60003), delete_request(entry=60003), 'COMMIT'], expect_success=False)
     assert 'Duplicate entry' in result.stderr, result.stderr
-    run(['USE fixture', 'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM item_template WHERE entry=60003)=0,1,0))'])
-    print('PASS: duplicate mapping causes transaction rollback; no orphan template', flush=True)
+    run(['USE fixture', 'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM item_template WHERE entry=60003)=0,1,0))',
+         'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM scaled_item_variant_request WHERE '
+         + key_predicate.format(100, 53, 150, 1, 1, 50) + ')=1,1,0))'])
+    print('PASS: duplicate mapping causes transaction rollback; no orphan template and request retained', flush=True)

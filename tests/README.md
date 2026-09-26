@@ -1,63 +1,86 @@
 # Module regression checks
 
-These checks do not edit or build the core checkout and do not start worldserver.
+These checks do not configure/build AzerothCore, edit its source, or start worldserver.
 
-## Compiler and C++ checks
-
-Requirements: GCC with GNU C++20, binutils, Python 3, a core checkout containing `src` and vendored
-`deps`, and the core's development headers (including Boost and MySQL).
+## Module-only compiler and C++ regressions
 
 ```bash
 python3 tests/check_compile.py --core /path/to/azerothcore-wotlk
 ```
 
-For development headers extracted outside system paths, add `--headers /path/to/extracted/usr/include`.
-The script compiles every module source with `-Wall -Wextra -Werror`, combines the objects to catch
-module symbol problems, checks for unresolved module symbols, and runs the C++ regressions. Core
-symbols remain unresolved intentionally: this is not a linked worldserver build.
+Requires GCC with GNU C++20, binutils, Python 3, canonical core headers/vendored dependencies, Boost,
+and MySQL/MariaDB development headers. Add `--headers /path/to/extracted/usr/include` when appropriate.
+The script compiles module objects with `-Wall -Wextra -Werror`, combines them, checks module symbol
+resolution, and runs `test_*.cpp`. This is not a linked worldserver build.
 
-The executable regressions cover invalid and extreme level configuration, all supported bracket
-widths and levels, maximum-level preservation, ID allocation beyond existing templates and mappings,
-32-bit overflow avoidance, distinct required-level/formula-version/generator-revision identities,
-runtime publication preserving persisted scaled fields while restoring validated base metadata, and
-target-resolution semantics for fixed/dynamic mode, dungeon hierarchy, external creature scaling,
-RealPlayersOnly, and level bounds.
+Tests cover configuration bounds, bracket widths, permanent ID allocation/overflow, fixed/dynamic
+target policy, six-field variant identity, repeated request-key deduplication, identity snapshots
+(including signed fields/range checks), and application of identity without changing scaled stats.
 
-## Isolated SQL checks
+Run core C++ codestyle from this module root:
 
-Requirements: Python 3, MariaDB 10.11 `mariadbd`, and a core checkout containing the world base schema.
-No client library, listener, existing database, or credentials are needed.
+```bash
+python3 /path/to/azerothcore-wotlk/apps/codestyle/codestyle-cpp.py
+git diff --check
+```
+
+## Isolated SQL regressions
 
 ```bash
 python3 tests/check_sql.py \
   --core /path/to/azerothcore-wotlk \
-  --mariadbd /usr/sbin/mariadbd
+  --mariadbd /path/to/mariadbd \
+  --library-path /path/to/extracted/usr/lib/x86_64-linux-gnu
 ```
 
-For extracted runtime libraries, add `--library-path /path/to/extracted/usr/lib/x86_64-linux-gnu`.
-The script creates a disposable datadir, executes SQL through MariaDB's bootstrap input, then removes
-that datadir. It executes the module-owned migration SQL and uses the core's table definitions.
-Assertions cover:
+The optional library path supports extracted dependencies. MariaDB bootstrap uses a disposable
+local datadir, strict SQL mode, no network listener, no credentials, and no application stack.
+This extends the permanent existing SQL regression, not a live-stack/e2e test.
 
-- Module-owned V1-to-V2 schema migration plus generator-revision migration without renumbering or changing issued items.
-- Malformed named-index repair, repeat application, and the six-column variant identity key.
-- Fresh-install schema matching the migrated key layout.
-- Persisted block, all resistances, item level, equip requirement, and cloned metadata.
-- Multiple equip requirements for the same base/target/formula.
-- Creature spawn alternatives, difficulty templates, and chest loot root discovery.
-- The recovery projection and restoration of a missing variant under its original ID.
-- SQL source extraction remains resilient to startup instrumentation added before recovery queries.
-- Transaction rollback after a duplicate mapping, with no orphan template left behind.
+Coverage includes:
 
-## Validation scope
+- Fresh pending/committed schema and legacy upgrades without changing old IDs, keys, or issued stats.
+- Repeatable migrations and six-column unique identities, including different RequiredLevel,
+  FormulaVersion, and generator revision; repeated pending requests collapse to one row.
+- Identity snapshot persistence and SQL types/signs matching the canonical item schema.
+- The actual C++ template/mapping SQL and completed-request deletion in one transaction.
+- Mapping failure rolls back the inserted template and retains the pending request.
+- A missing source row cannot insert a mapping or consume pending demand.
+- Current missing-template projection and restoration under the original ID.
+- Historical missing-template projection and a source guard preventing current-code regeneration.
+  This last check is static/SQL coverage, not execution of worldserver's recovery control flow.
 
-The change was checked against Playerbot commit `7f12e89ee5f467a50e62eba1d525eac7dc953d03` and stock
-master commit `b6c033cb009d4e137af70b60151d23bcbeb4b2b8`. MariaDB tests use strict SQL mode.
+The core SQL checker is designed for core directories. Its content checks apply to the new migration;
+it rejects changes in any `base` directory by policy. This module's explicitly requested fresh schema
+belongs in its own `sql/world/base`, so that directory-policy rejection is expected and must be
+reported separately from SQL execution results. Never move the schema into core to satisfy this rule.
 
-The upstream C++ codestyle checker applies to this module. The upstream SQL checker rejects edits to
-any `base` directory by design; this module owns its installation schema in `sql/world/base`, so that
-core-directory policy is not an indication of invalid module SQL. SQL behavior is tested above.
+## Manual/live checklist (not executed by these checks)
 
-These checks do not exercise live worldserver startup, client tooltips, Playerbot equipment selection,
-or other installed modules. Test dungeon/raid loot, a bot-only instance, trade/mail, and persistence
-across restart in a staging server before deploying to production.
+Use an isolated realm with the canonical Playerbot core and mod-playerbots branches.
+
+- [ ] Clean install: both schemas validate; no demand means no new variants.
+- [ ] Upgrade: existing inventory/equipment IDs and scaled values remain unchanged.
+- [ ] First unseen drop: original item, exactly one pending key, no template or ID allocation.
+- [ ] Repeated identical drops before restart: original item, still one pending row.
+- [ ] Simultaneous identical map-worker/player/bot misses: one logical request.
+- [ ] Restart: one template plus mapping committed; completed request disappears.
+- [ ] Matching post-restart drop selects the exact generated entry.
+- [ ] Same base at two target levels; distinct RequiredLevels stay separate.
+- [ ] ScaleUp, ScaleDown, dynamic and fixed modes; BracketStep and MaxLevel boundaries.
+- [ ] Quality/item/map/level exclusions and real-player versus bot-only groups.
+- [ ] Chest loot and ordinary creature/boss loot.
+- [ ] Quest-required loot, quest starters, MaxCount, unique-equipped and disabled items stay original.
+- [ ] Category limits, conditional loot, free-for-all, follow-loot-rules and faction checks remain correct.
+- [ ] Normal item, RandomProperty, RandomSuffix: both metadata fields match final entry.
+- [ ] Group loot; Playerbot loot; Playerbot Need/Greed.
+- [ ] Playerbot autogear, stat valuation and equip behavior.
+- [ ] Trade, mail, auction, guild bank, reconnect and tooltip/icon cache.
+- [ ] Legacy identity repair: withheld on repair startup, selected after clean restart; cache refreshes.
+- [ ] Missing current template with known snapshot/config recovers under the same ID.
+- [ ] Legacy unknown provenance defers recovery; historical generator is never regenerated.
+- [ ] FormulaVersion/generator/PreserveNonZeroStats change retires stale pending requests.
+- [ ] Known family conflict requires FormulaVersion bump without rewriting committed items.
+- [ ] Missing base, startup cap and synthetic-ID exhaustion retain pending demand.
+- [ ] DB outage during enqueue leaves loot original; retry limitation matches README.
+- [ ] Interrupt startup transaction: no partial item/mapping/deletion; request remains on rollback.
