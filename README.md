@@ -16,21 +16,15 @@ scaled variant from two sources:
 - the persisted scaled template, which supplies the synthetic entry ID plus the fields intentionally
   changed by this module: ItemLevel, RequiredLevel, stats, weapon damage, armor, block, and resistances.
 
-This restores the useful behavior of the original runtime-registration implementation without returning
-to live runtime mutation. Publication happens before the world becomes connectable. During gameplay the
-module only looks up indexed variants and never creates, inserts, or resizes item-template containers.
-A missing variant leaves the original loot item unchanged.
-
-Historical generator revisions are also re-published so already-issued items retain the corrected
-runtime metadata. Only variants using the current internal generator revision are indexed for new loot.
+Publication happens before the world becomes connectable. During gameplay the module only looks up
+indexed variants and never creates, inserts, or resizes item-template containers. A missing variant
+leaves the original loot item unchanged.
 
 Additional safety properties:
 
 - Template and registry rows are written in the same transaction and checked after each batch.
 - Existing synthetic item IDs are preserved and never compacted or reused.
 - Required equip level is part of variant identity, so distinct equip requirements cannot collide.
-- Operator `FormulaVersion` and the internal generator revision are separate identity fields.
-- Missing historical templates are not regenerated with newer generator logic.
 - Curves are loaded into module-owned DBC stores using `RandPropPoints.dbc`,
   `ScalingStatValues.dbc`, and their database-backed data. Core global DBC stores are not reloaded.
 - Configuration is a startup snapshot. `.reload config` warns that a restart is required.
@@ -50,64 +44,29 @@ already validated base item. This makes the scaled variant inherit the base item
 `DisplayInfoID` and related identity fields while retaining the scaled values listed above.
 
 The module also implements `WORLDHOOK_ON_BEFORE_FINALIZE_PLAYER_WORLD_SESSION` and salts AzerothCore's
-client-cache version while ItemScaling is enabled. This makes clients discard stale cached item-query
-data from older module versions instead of continuing to reuse an old broken synthetic-item response.
+client-cache version while ItemScaling is enabled. This ties client item-query cache data for synthetic
+entries to the active module metadata without adding an `item_dbc` row or patching the client.
 
-Existing synthetic IDs do not need to be deleted or renumbered for this publication fix. Rebuild and
-restart worldserver after updating the module. Live-client testing is still recommended before a
-production rollout.
+Live-client testing is still recommended before a production rollout.
 
-## Database layout and upgrades
+## Database layout
 
-The module intentionally keeps one module-owned persistent table:
+The module intentionally keeps one module-owned persistent world table:
 
 `scaled_item_variant`
 : maps each synthetic item entry to its base item, target level, target ItemLevel, FormulaVersion,
-  generator revision, and RequiredLevel. It is required for deterministic restart recovery, existing
-  item stability, variant identity, and current-versus-historical generator handling.
+  and RequiredLevel. It provides deterministic restart recovery, variant identity, and lookup-only
+  gameplay.
 
-The SQL files have separate roles and are not duplicate or obsolete databases:
+`sql/world/base/scaled_item_variant.sql` defines the complete schema used by a fresh installation.
+Runtime C++ does not create or alter the schema; it validates the expected structure and disables
+scaling for that run if the required structure is missing or incompatible.
 
-- `sql/world/base/scaled_item_variant.sql` defines the current table for fresh database assembly.
-- `data/sql/db-world/updates/2026_09_25_00_item_scaling_registry_schema.sql` upgrades older installs
-  with RequiredLevel identity and repairs the variant unique key.
-- `data/sql/db-world/updates/2026_09_25_01_item_scaling_generator_revision.sql` adds the internal
-  generator revision while preserving existing IDs and generated item values.
+Scaled variants are persisted as `item_template` rows. If a current-schema template row is missing,
+startup can reconstruct it under the same synthetic ID before normal template loading.
 
-Released update files should remain in place so existing installations can upgrade safely. Runtime C++
-does not create or alter the schema; it validates the expected schema and disables scaling for that run
-if the required structure is missing or incompatible.
-
-Scaled variants themselves remain persisted as `item_template` rows. If a current-revision template
-row is missing, startup can reconstruct it under the same synthetic ID. A missing template from a
-historical generator revision is not reconstructed with newer generator logic.
-
-## Upgrade from the original version
-
-Back up the world database before deployment. Stop worldserver, update the module, rebuild, and restart.
-There is no need to edit core source, patch Playerbots, patch the client, delete
-`scaled_item_variant`, or renumber existing synthetic items.
-
-Review the existing configuration:
-
-```ini
-ItemScaling.PreStageDungeonLoot = 1
-ItemScaling.BracketStep = 1
-ItemScaling.MaxNewVariantsPerStartup = 25000
-ItemScaling.SyntheticEntry.Maximum = 2000000
-```
-
-An existing `PreStageDungeonLoot = 0` setting is respected: only already-persisted variants are
-available. On-demand gameplay creation has been removed. Fresh installations use bounded pre-staging
-by default.
-
-Generation is limited to 25,000 new variants per startup by default. Further restarts can generate
-remaining variants. Tune the limit for your hardware and database. First-time generation performs real
-database work, and total database/template memory usage grows as variants are generated.
-
-`FormulaVersion = 1` remains the operator baseline. Generator revision 1 records the implementation
-family separately. Change `FormulaVersion` only when changing scaling settings that should
-intentionally create a new variant family, including `PreserveNonZeroStats`.
+`FormulaVersion` remains part of variant identity. Change it only when intentionally creating a
+separate scaling family for formula-affecting settings.
 
 ## Behavior and limits
 
@@ -142,8 +101,7 @@ git clone https://github.com/Ildourol/mod-item-level-scaling.git modules/mod-ite
 Regenerate the existing core CMake configuration and rebuild worldserver. Copy the distributed module
 configuration to the module configuration directory used by the installation, then review the options.
 
-`include.sh` registers the module base SQL with AzerothCore's database assembler and the module update
-directory with the database updater.
+`include.sh` registers the module base SQL with AzerothCore's database assembler.
 
 ## Compatibility and validation
 

@@ -8,7 +8,3 @@ DB_WORLD_CUSTOM_PATHS+=(
 	$MOD_ITEM_LEVEL_SCALING_ROOT"/sql/world/base/"
 )
 
-## UPDATES
-DB_WORLD_UPDATE_PATHS+=(
-	$MOD_ITEM_LEVEL_SCALING_ROOT"/data/sql/db-world/updates/"
-)

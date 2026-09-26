@@ -18,7 +18,7 @@ symbols remain unresolved intentionally: this is not a linked worldserver build.
 
 The executable regressions cover invalid and extreme level configuration, all supported bracket
 widths and levels, maximum-level preservation, ID allocation beyond existing templates and mappings,
-32-bit overflow avoidance, distinct required-level/formula-version/generator-revision identities,
+32-bit overflow avoidance, distinct required-level/formula-version identities,
 runtime publication preserving persisted scaled fields while restoring validated base metadata, and
 target-resolution semantics for fixed/dynamic mode, dungeon hierarchy, external creature scaling,
 RealPlayersOnly, and level bounds.
@@ -36,12 +36,10 @@ python3 tests/check_sql.py \
 
 For extracted runtime libraries, add `--library-path /path/to/extracted/usr/lib/x86_64-linux-gnu`.
 The script creates a disposable datadir, executes SQL through MariaDB's bootstrap input, then removes
-that datadir. It executes the module-owned migration SQL and uses the core's table definitions.
+that datadir. It installs the module base SQL and uses the core's table definitions.
 Assertions cover:
 
-- Module-owned V1-to-V2 schema migration plus generator-revision migration without renumbering or changing issued items.
-- Malformed named-index repair, repeat application, and the six-column variant identity key.
-- Fresh-install schema matching the migrated key layout.
+- Fresh-install schema and the five-column variant identity key.
 - Persisted block, all resistances, item level, equip requirement, and cloned metadata.
 - Multiple equip requirements for the same base/target/formula.
 - Creature spawn alternatives, difficulty templates, and chest loot root discovery.
