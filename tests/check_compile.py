@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile the module against an existing, unmodified core checkout; no worldserver build."""
+"""Compile only module objects and discover permanent test_*.cpp regressions; no core configuration/build."""
 import argparse
 import pathlib
 import subprocess

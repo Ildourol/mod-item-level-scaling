@@ -118,7 +118,8 @@ void ItemScalingConfig::Load()
     }
 
     SyntheticEntryAutoOffset = sConfigMgr->GetOption<uint32>("ItemScaling.SyntheticEntry.AutoOffset", 1000);
-    PreStageDungeonLoot = sConfigMgr->GetOption<bool>("ItemScaling.PreStageDungeonLoot", true);
+    bool const legacyEnabled = sConfigMgr->GetOption<bool>("ItemScaling.PreStageDungeonLoot", true, false);
+    DemandLedgerEnable = sConfigMgr->GetOption<bool>("ItemScaling.DemandLedger.Enable", legacyEnabled);
     MaxNewVariantsPerStartup = std::clamp<uint32>(
         sConfigMgr->GetOption<uint32>("ItemScaling.MaxNewVariantsPerStartup", 25000), 1, 250000);
     SyntheticEntryMaximum = std::clamp<uint32>(

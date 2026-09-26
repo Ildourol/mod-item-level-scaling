@@ -5,6 +5,8 @@
 #include "ItemScalingLootScript.h"
 #include "Creature.h"
 #include "DBCStores.h"
+#include "DisableMgr.h"
+#include "Item.h"
 #include "ItemEnchantmentMgr.h"
 #include "ItemScalingBaseline.h"
 #include "ItemScalingConfig.h"
@@ -240,18 +242,28 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
             cSrc, cMax, lTarget);
     }
 
-    // Use exactly the same brackets as startup generation. Never increase the target by rounding.
+    // Bracketing is a runtime target rule. Never increase the target by rounding.
     uint8 requestedTarget = lTarget;
     lTarget = ItemScalingSafety::Bracket(lTarget, sItemScalingConfig->MinLevel,
         sItemScalingConfig->MaxLevel, sItemScalingConfig->BracketStep);
 
     auto scaleLootItem = [&](LootItem& item)
     {
+        if (item.needs_quest)
+            return;
+
         ItemTemplate const* baseProto = sObjectMgr->GetItemTemplate(item.itemid);
         if (!baseProto || !ItemScalingFormula::IsScalableEquipment(baseProto))
         {
             return;
         }
+
+        // Entry-based limits/quest starters must not acquire a second identity. Conditions and
+        // multi-drop bookkeeping remain attached to this LootItem; their cloned flags stay unchanged.
+        if (baseProto->MaxCount != 0 || baseProto->StartQuest != 0 || baseProto->ScriptId != 0 ||
+            baseProto->HasFlag(ITEM_FLAG_UNIQUE_EQUIPPABLE) ||
+            sDisableMgr->IsDisabledFor(DISABLE_TYPE_LOOT, item.itemid, nullptr))
+            return;
 
         if (!sItemScalingConfig->IsQualityEnabled(baseProto->Quality))
         {
@@ -341,8 +353,8 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
             return;
         }
 
-        // Only publish templates already loaded and validated by the core.
-        uint32 variantEntry = sItemScalingRegistry->FindVariant(
+        // An exact miss records demand and leaves this occurrence unchanged.
+        uint32 variantEntry = sItemScalingRegistry->FindOrRequestVariant(
             baseProto,
             lTarget,
             targetIlvl,
@@ -350,15 +362,14 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
             highestRealPlayerLevel
         );
 
-        if (variantEntry != 0 && variantEntry != item.itemid)
+        if (variantEntry != 0 && variantEntry != item.itemid &&
+            !sDisableMgr->IsDisabledFor(DISABLE_TYPE_LOOT, variantEntry, nullptr))
         {
             item.itemid = variantEntry;
 
-            // If item has random suffix, recalculate factor based on the new synthetic ItemLevel
-            if (baseProto->RandomSuffix != 0)
-            {
-                item.randomSuffix = GenerateEnchSuffixFactor(variantEntry);
-            }
+            // Match LootItem construction using the final entry for all three random-metadata cases.
+            item.randomSuffix = GenerateEnchSuffixFactor(variantEntry);
+            item.randomPropertyId = Item::GenerateItemRandomPropertyId(variantEntry);
 
             if (sItemScalingConfig->Debug)
             {
@@ -368,14 +379,8 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
         }
     };
 
-    // Scale normal and quest-required drops. AzerothCore stores quest-required
-    // loot in a separate vector that follows the same LootItem shape.
+    // Quest-required loot must keep the entry used by HasQuestForItem().
     for (LootItem& item : loot->items)
-    {
-        scaleLootItem(item);
-    }
-
-    for (LootItem& item : loot->quest_items)
     {
         scaleLootItem(item);
     }

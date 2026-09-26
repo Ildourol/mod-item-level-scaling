@@ -9,18 +9,15 @@
 #include "ItemScalingBaseline.h"
 #include "ItemScalingConfig.h"
 #include "ItemScalingFormula.h"
-#include "ItemScalingRuntimeTemplate.h"
+#include "ItemScalingIdentity.h"
 #include "Log.h"
 #include "ObjectMgr.h"
 #include "StringFormat.h"
 #include "World.h"
-#include <algorithm>
-#include <chrono>
-#include <cmath>
 #include <cstddef>
+#include <string>
 #include <unordered_map>
 #include <vector>
-#include <unordered_set>
 
 ItemScalingRegistry* ItemScalingRegistry::instance()
 {
@@ -51,7 +48,8 @@ static std::string BuildItemTemplateInsertSQL(ItemTemplate const& scaledProto, u
         "  GemProperties, RequiredDisenchantSkill, ArmorDamageModifier, duration, ItemLimitCategory, HolidayId, ScriptName, DisenchantID, "
         "  FoodType, minMoneyLoot, maxMoneyLoot, flagsCustom"
         ") SELECT "
-        "  {} AS entry, class, subclass, SoundOverrideSubclass, name, displayid, Quality, Flags, FlagsExtra, BuyCount, BuyPrice, SellPrice, InventoryType, "
+        "  {} AS entry, {} AS class, {} AS subclass, {} AS SoundOverrideSubclass, name, {} AS displayid, "
+        "  Quality, Flags, FlagsExtra, BuyCount, BuyPrice, SellPrice, {} AS InventoryType, "
         "  AllowableClass, AllowableRace, {} AS ItemLevel, {} AS RequiredLevel, RequiredSkill, RequiredSkillRank, requiredspell, requiredhonorrank, "
         "  RequiredCityRank, RequiredReputationFaction, RequiredReputationRank, maxcount, stackable, ContainerSlots, "
         "  {} AS stat_type1, {} AS stat_value1, {} AS stat_type2, {} AS stat_value2, {} AS stat_type3, {} AS stat_value3, "
@@ -67,13 +65,14 @@ static std::string BuildItemTemplateInsertSQL(ItemTemplate const& scaledProto, u
         "  spellid_3, spelltrigger_3, spellcharges_3, spellppmRate_3, spellcooldown_3, spellcategory_3, spellcategorycooldown_3, "
         "  spellid_4, spelltrigger_4, spellcharges_4, spellppmRate_4, spellcooldown_4, spellcategory_4, spellcategorycooldown_4, "
         "  spellid_5, spelltrigger_5, spellcharges_5, spellppmRate_5, spellcooldown_5, spellcategory_5, spellcategorycooldown_5, "
-        "  bonding, description, PageText, LanguageID, PageMaterial, startquest, lockid, Material, sheath, RandomProperty, RandomSuffix, "
+        "  bonding, description, PageText, LanguageID, PageMaterial, startquest, lockid, {} AS Material, {} AS sheath, RandomProperty, RandomSuffix, "
         "  {} AS block, itemset, MaxDurability, area, Map, BagFamily, TotemCategory, "
         "  socketColor_1, socketContent_1, socketColor_2, socketContent_2, socketColor_3, socketContent_3, socketBonus, "
         "  GemProperties, RequiredDisenchantSkill, ArmorDamageModifier, duration, ItemLimitCategory, HolidayId, ScriptName, DisenchantID, "
         "  FoodType, minMoneyLoot, maxMoneyLoot, flagsCustom "
         "FROM item_template WHERE entry = {};",
-        scaledProto.ItemId,
+        scaledProto.ItemId, scaledProto.Class, scaledProto.SubClass, scaledProto.SoundOverrideSubclass,
+        scaledProto.DisplayInfoID, scaledProto.InventoryType,
         scaledProto.ItemLevel,
         scaledProto.RequiredLevel,
         scaledProto.ItemStat[0].ItemStatType, scaledProto.ItemStat[0].ItemStatValue,
@@ -91,7 +90,7 @@ static std::string BuildItemTemplateInsertSQL(ItemTemplate const& scaledProto, u
         scaledProto.Armor,
         scaledProto.HolyRes, scaledProto.FireRes, scaledProto.NatureRes,
         scaledProto.FrostRes, scaledProto.ShadowRes, scaledProto.ArcaneRes,
-        scaledProto.Block,
+        scaledProto.Material, scaledProto.Sheath, scaledProto.Block,
         baseEntry
     );
 }
@@ -160,14 +159,58 @@ namespace
             key.generatorRevision != 0 && key.requiredLevel >= 1 && key.requiredLevel <= 80;
     }
 
-    std::string VariantInsert(uint32 entry, VariantKey const& key)
+    std::string const KeyColumns =
+        "base_entry,target_effective_level,target_item_level,formula_version,generator_revision,required_level";
+    std::string const IdentityColumns =
+        "base_class,base_subclass,base_sound_override_subclass,base_material,base_displayid,"
+        "base_inventory_type,base_sheath";
+
+    bool HasIdentity(Field* fields)
+    {
+        for (uint32 i = 0; i < 7; ++i)
+            if (fields[i].IsNull())
+                return false;
+        return true;
+    }
+
+    ItemScalingIdentity ReadIdentity(Field* fields)
+    {
+        return {fields[0].Get<uint8>(), fields[1].Get<uint8>(), fields[2].Get<int8>(),
+            fields[3].Get<int8>(), fields[4].Get<uint32>(), fields[5].Get<uint8>(), fields[6].Get<uint8>()};
+    }
+
+    std::string KeyPredicate(VariantKey const& key)
+    {
+        return Acore::StringFormat(
+            "base_entry={} AND target_effective_level={} AND target_item_level={} AND formula_version={} "
+            "AND generator_revision={} AND required_level={}", key.baseEntry, key.targetEffectiveLevel,
+            key.targetItemLevel, key.formulaVersion, key.generatorRevision, key.requiredLevel);
+    }
+
+    std::string DeleteRequest(VariantKey const& key)
+    {
+        return "DELETE FROM scaled_item_variant_request WHERE " + KeyPredicate(key);
+    }
+
+    std::string DeleteCompletedRequest(VariantKey const& key, uint32 entry)
+    {
+        return Acore::StringFormat(
+            "DELETE FROM scaled_item_variant_request WHERE {} "
+            "AND EXISTS (SELECT 1 FROM scaled_item_variant WHERE variant_entry={})", KeyPredicate(key), entry);
+    }
+
+    std::string VariantInsert(uint32 entry, VariantKey const& key, ItemScalingIdentity const& identity)
     {
         return Acore::StringFormat(
             "INSERT INTO scaled_item_variant "
             "(variant_entry,base_entry,target_effective_level,target_item_level,formula_version,"
-            "generator_revision,required_level) "
-            "VALUES ({},{},{},{},{},{},{});", entry, key.baseEntry, key.targetEffectiveLevel,
-            key.targetItemLevel, key.formulaVersion, key.generatorRevision, key.requiredLevel);
+            "generator_revision,required_level,base_class,base_subclass,base_sound_override_subclass,"
+            "base_material,base_displayid,base_inventory_type,base_sheath,preserve_nonzero_stats) "
+            "SELECT {},{},{},{},{},{},{},{},{},{},{},{},{},{},{} FROM item_template WHERE entry={};",
+            entry, key.baseEntry, key.targetEffectiveLevel, key.targetItemLevel, key.formulaVersion,
+            key.generatorRevision, key.requiredLevel, identity.itemClass, identity.subClass,
+            identity.soundOverrideSubclass, identity.material, identity.displayId, identity.inventoryType,
+            identity.sheath, uint32(sItemScalingConfig->PreserveNonZeroStats), entry);
     }
 
     // DirectCommitTransaction has no success return. Verify each committed batch before proceeding.
@@ -187,7 +230,14 @@ namespace
             "SELECT COUNT(*) FROM scaled_item_variant s "
             "JOIN item_template i ON i.entry=s.variant_entry "
             "WHERE s.variant_entry IN ({}) AND i.ItemLevel=s.target_item_level "
-            "AND i.RequiredLevel=s.required_level", ids);
+            "AND i.RequiredLevel=s.required_level "
+            "AND i.class=s.base_class AND i.subclass=s.base_subclass "
+            "AND i.SoundOverrideSubclass=s.base_sound_override_subclass AND i.Material=s.base_material "
+            "AND i.displayid=s.base_displayid AND i.InventoryType=s.base_inventory_type AND i.sheath=s.base_sheath "
+            "AND NOT EXISTS (SELECT 1 FROM scaled_item_variant_request r WHERE r.base_entry=s.base_entry "
+            "AND r.target_effective_level=s.target_effective_level AND r.target_item_level=s.target_item_level "
+            "AND r.formula_version=s.formula_version AND r.generator_revision=s.generator_revision "
+            "AND r.required_level=s.required_level)", ids);
         if (!result || result->Fetch()[0].Get<uint64>() != entries.size())
         {
             LOG_ERROR("module.ItemScaling", "ItemScaling startup transaction verification failed; scaling disabled.");
@@ -201,99 +251,103 @@ namespace
 
 bool ItemScalingRegistry::ValidateSchema()
 {
-    QueryResult columns = WorldDatabase.Query(
-        "SELECT COLUMN_NAME,DATA_TYPE,COLUMN_TYPE FROM information_schema.COLUMNS "
-        "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='scaled_item_variant'");
-    if (!columns)
+    struct ColumnType
     {
-        LOG_ERROR("module.ItemScaling",
-            "Missing scaled_item_variant table. Apply module database updates before starting worldserver.");
-        return false;
-    }
-
-    std::unordered_set<std::string> names;
-    do
+        std::string type;
+        bool isUnsigned;
+        bool nullable;
+    };
+    for (std::string const table : {"scaled_item_variant", "scaled_item_variant_request"})
     {
-        Field* field = columns->Fetch();
-        std::string name = field[0].Get<std::string>();
-        std::string type = field[1].Get<std::string>();
-        std::string columnType = field[2].Get<std::string>();
-        std::string expectedType;
+        bool const request = table == "scaled_item_variant_request";
+        std::unordered_map<std::string, ColumnType> expected = {
+            {"base_entry", {"int", true, false}},
+            {"target_effective_level", {"tinyint", true, false}},
+            {"target_item_level", {"smallint", true, false}},
+            {"formula_version", {"tinyint", true, false}},
+            {"generator_revision", {"tinyint", true, false}},
+            {"required_level", {"tinyint", true, false}},
+            {"base_class", {"tinyint", true, !request}},
+            {"base_subclass", {"tinyint", true, !request}},
+            {"base_sound_override_subclass", {"tinyint", false, !request}},
+            {"base_material", {"tinyint", false, !request}},
+            {"base_displayid", {"int", true, !request}},
+            {"base_inventory_type", {"tinyint", true, !request}},
+            {"base_sheath", {"tinyint", true, !request}},
+            {"preserve_nonzero_stats", {"tinyint", true, !request}}
+        };
+        if (request)
+            expected.emplace("requested_at", ColumnType{"timestamp", false, false});
+        else
+            expected.emplace("variant_entry", ColumnType{"int", true, false});
 
-        if (name == "variant_entry" || name == "base_entry")
-            expectedType = "int";
-        else if (name == "target_item_level")
-            expectedType = "smallint";
-        else if (name == "target_effective_level" || name == "formula_version" ||
-            name == "generator_revision" || name == "required_level")
-            expectedType = "tinyint";
-
-        if (!expectedType.empty() && (type != expectedType || columnType.find("unsigned") == std::string::npos))
+        QueryResult columns = WorldDatabase.Query(
+            "SELECT COLUMN_NAME,DATA_TYPE,COLUMN_TYPE,IS_NULLABLE FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='{}'", table);
+        if (columns)
         {
-            LOG_ERROR("module.ItemScaling",
-                "Incompatible module column {}: {}. Apply the current module database updates.",
-                name, columnType);
+            do
+            {
+                Field* field = columns->Fetch();
+                auto it = expected.find(field[0].Get<std::string>());
+                if (it == expected.end())
+                    continue;
+                ColumnType const& type = it->second;
+                if (field[1].Get<std::string>() != type.type ||
+                    (field[2].Get<std::string>().find("unsigned") != std::string::npos) != type.isUnsigned ||
+                    (field[3].Get<std::string>() == "YES") != type.nullable)
+                {
+                    LOG_ERROR("module.ItemScaling", "Incompatible {}.{}; apply module database updates.",
+                        table, it->first);
+                    return false;
+                }
+                expected.erase(it);
+            } while (columns->NextRow());
+        }
+        if (!expected.empty())
+        {
+            LOG_ERROR("module.ItemScaling", "Missing {} columns; apply module database updates.", table);
             return false;
         }
 
-        names.insert(name);
-    } while (columns->NextRow());
-
-    for (char const* required : {"variant_entry", "base_entry", "target_effective_level",
-        "target_item_level", "formula_version", "generator_revision", "required_level"})
-    {
-        if (!names.count(required))
+        QueryResult index = WorldDatabase.Query(
+            "SELECT COLUMN_NAME,NON_UNIQUE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() "
+            "AND TABLE_NAME='{}' AND INDEX_NAME='{}' ORDER BY SEQ_IN_INDEX",
+            table, request ? "PRIMARY" : "uk_variant_key");
+        std::vector<std::string> indexColumns;
+        if (index)
         {
-            LOG_ERROR("module.ItemScaling",
-                "Incompatible scaled_item_variant schema: missing {}. Apply the current module database updates.",
-                required);
+            do
+            {
+                if (index->Fetch()[1].Get<uint8>() != 0)
+                    return false;
+                indexColumns.push_back(index->Fetch()[0].Get<std::string>());
+            } while (index->NextRow());
+        }
+        std::vector<std::string> const keyColumns = {"base_entry", "target_effective_level", "target_item_level",
+            "formula_version", "generator_revision", "required_level"};
+        if (indexColumns != keyColumns)
+        {
+            LOG_ERROR("module.ItemScaling", "Incompatible {} identity key; apply module database updates.", table);
             return false;
         }
     }
-
-    QueryResult engines = WorldDatabase.Query(
-        "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() "
-        "AND TABLE_NAME IN ('item_template','scaled_item_variant') AND ENGINE='InnoDB'");
-    if (!engines || engines->Fetch()[0].Get<uint64>() != 2)
-    {
-        LOG_ERROR("module.ItemScaling", "ItemScaling requires InnoDB for template and registry transactions.");
-        return false;
-    }
-
     QueryResult primary = WorldDatabase.Query(
         "SELECT COLUMN_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() "
         "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='PRIMARY' ORDER BY SEQ_IN_INDEX");
     if (!primary || primary->GetRowCount() != 1 || primary->Fetch()[0].Get<std::string>() != "variant_entry")
     {
-        LOG_ERROR("module.ItemScaling",
-            "Incompatible module table primary key. Apply the current module database updates.");
+        LOG_ERROR("module.ItemScaling", "Invalid committed variant primary key; apply module database updates.");
         return false;
     }
-
-    QueryResult index = WorldDatabase.Query(
-        "SELECT COLUMN_NAME,NON_UNIQUE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() "
-        "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key' ORDER BY SEQ_IN_INDEX");
-    std::vector<std::string> indexColumns;
-    bool indexIsUnique = true;
-    if (index)
+    QueryResult engines = WorldDatabase.Query(
+        "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() "
+        "AND TABLE_NAME IN ('item_template','scaled_item_variant','scaled_item_variant_request') AND ENGINE='InnoDB'");
+    if (!engines || engines->Fetch()[0].Get<uint64>() != 3)
     {
-        do
-        {
-            Field* field = index->Fetch();
-            indexColumns.push_back(field[0].Get<std::string>());
-            indexIsUnique = indexIsUnique && field[1].Get<uint8>() == 0;
-        } while (index->NextRow());
-    }
-
-    std::vector<std::string> expected = {"base_entry", "target_effective_level", "target_item_level",
-        "formula_version", "generator_revision", "required_level"};
-    if (!indexIsUnique || indexColumns != expected)
-    {
-        LOG_ERROR("module.ItemScaling",
-            "Incompatible scaled_item_variant unique key. Apply the current module database updates.");
+        LOG_ERROR("module.ItemScaling", "ItemScaling requires InnoDB for all three transactional tables.");
         return false;
     }
-
     return true;
 }
 
@@ -312,7 +366,7 @@ bool ItemScalingRegistry::ResolveSyntheticEntryRange()
     // Do not overwrite configuration with allocator state. Existing IDs are never renumbered.
     if (_nextSyntheticEntry > sItemScalingConfig->SyntheticEntryMaximum)
     {
-        LOG_WARN("module.ItemScaling", "Synthetic ID limit reached; no new variants will be staged.");
+        LOG_WARN("module.ItemScaling", "Synthetic ID limit reached; pending requests will be retained.");
     }
     LOG_INFO("server.loading",
         "ItemScaling: synthetic IDs highest item {}, highest variant {}, next {}, maximum {}.",
@@ -322,223 +376,147 @@ bool ItemScalingRegistry::ResolveSyntheticEntryRange()
 
 bool ItemScalingRegistry::SynchronizeExistingVariants()
 {
-    auto const started = std::chrono::steady_clock::now();
     QueryResult result = WorldDatabase.Query(
         "SELECT s.variant_entry,s.base_entry,s.target_effective_level,s.target_item_level,"
-        "s.formula_version,s.generator_revision,s.required_level,{} FROM scaled_item_variant s "
+        "s.formula_version,s.generator_revision,s.required_level,s.base_class,s.base_subclass,"
+        "s.base_sound_override_subclass,s.base_material,s.base_displayid,s.base_inventory_type,s.base_sheath,"
+        "s.preserve_nonzero_stats,{} FROM scaled_item_variant s "
         "JOIN item_template b ON b.entry=s.base_entry "
         "LEFT JOIN item_template i ON i.entry=s.variant_entry WHERE i.entry IS NULL", BaseColumns);
     if (!result)
         return true;
     auto transaction = WorldDatabase.BeginTransaction();
     std::vector<uint32> entries;
-    entries.reserve(250);
     uint32 recovered = 0;
+    uint32 deferred = 0;
     do
     {
         Field* fields = result->Fetch();
         uint32 entry = fields[0].Get<uint32>();
         VariantKey key = ReadKey(fields + 1);
+        // Legacy configuration provenance is unknown: do not guess how an issued item was generated.
         if (!ValidKey(key) || !entry || entry == key.baseEntry ||
-            entry > sItemScalingConfig->SyntheticEntryMaximum)
+            key.generatorRevision != ITEM_SCALING_GENERATOR_REVISION ||
+            key.formulaVersion != sItemScalingConfig->FormulaVersion || !HasIdentity(fields + 7) ||
+            fields[14].IsNull() || fields[14].Get<uint8>() != uint8(sItemScalingConfig->PreserveNonZeroStats))
         {
-            LOG_ERROR("module.ItemScaling", "Invalid persisted variant {} skipped during recovery.", entry);
+            ++deferred;
             continue;
         }
-        ItemTemplate base = ReadBaseTemplate(fields + 7);
-        if (key.generatorRevision != ITEM_SCALING_GENERATOR_REVISION)
-        {
-            LOG_ERROR("module.ItemScaling",
-                "Persisted variant {} uses generator revision {}; current revision is {}. "
-                "Missing historical templates are not regenerated with newer logic.",
-                entry, key.generatorRevision, ITEM_SCALING_GENERATOR_REVISION);
-            continue;
-        }
+        ItemTemplate base = ReadBaseTemplate(fields + 15);
         ItemTemplate scaled = ItemScalingFormula::CreateScaledTemplate(&base, entry,
             key.targetEffectiveLevel, key.targetItemLevel, key.formulaVersion, key.requiredLevel);
         scaled.RequiredLevel = key.requiredLevel;
+        ReadIdentity(fields + 7).Apply(scaled);
         transaction->Append(BuildItemTemplateInsertSQL(scaled, key.baseEntry));
+        transaction->Append(DeleteRequest(key));
         entries.push_back(entry);
         ++recovered;
         if (entries.size() >= 250 && !CommitBatch(transaction, entries))
             return false;
     } while (result->NextRow());
-    bool const committed = CommitBatch(transaction, entries);
-    if (committed)
-    {
-        auto const elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - started);
-        LOG_INFO("server.loading", "ItemScaling: recovered {} missing variants in {} ms.",
-            recovered, elapsed.count());
-    }
-    return committed;
+    if (!CommitBatch(transaction, entries))
+        return false;
+    LOG_INFO("server.loading", "ItemScaling: recovered {} missing templates under their original IDs.", recovered);
+    if (deferred)
+        LOG_WARN("module.ItemScaling", "{} missing templates deferred: historical/unknown family or missing snapshot. "
+            "Restore historical templates from backup; legacy identity metadata is backfilled after core loading.", deferred);
+    return true;
 }
 
-bool ItemScalingRegistry::PreStageDungeonLoot()
+bool ItemScalingRegistry::MaterializePendingRequests()
 {
-    auto const started = std::chrono::steady_clock::now();
-    if (!sItemScalingConfig->PreStageDungeonLoot)
+    if (!sItemScalingConfig->DemandLedgerEnable)
     {
-        LOG_WARN("module.ItemScaling", "Pre-staging disabled: only existing persisted variants can be used.");
+        LOG_INFO("server.loading", "ItemScaling: demand ledger disabled; pending requests retained.");
         return true;
     }
-    // Both stock master and the Playerbot branch use id1/id2/id3 for creature spawn alternatives.
-    QueryResult roots = WorldDatabase.Query(
-        "SELECT clt.Item,clt.Reference FROM creature cr "
-        "JOIN instance_template inst ON inst.map=cr.map "
-        "JOIN (SELECT guid AS spawnId,id AS entry FROM creature "
-        "UNION SELECT spawnId,entry FROM creature_multispawn) spawn_ct ON spawn_ct.spawnId=cr.guid "
-        "JOIN creature_template base_ct ON base_ct.entry=spawn_ct.entry "
-        "JOIN creature_template ct ON ct.entry IN (base_ct.entry,base_ct.difficulty_entry_1,"
-        "base_ct.difficulty_entry_2,base_ct.difficulty_entry_3) "
-        "JOIN creature_loot_template clt ON clt.Entry=ct.lootid "
-        "UNION SELECT glt.Item,glt.Reference FROM gameobject go "
-        "JOIN instance_template inst ON inst.map=go.map "
-        "JOIN gameobject_template gt ON gt.entry=go.id "
-        "JOIN gameobject_loot_template glt ON glt.Entry=gt.Data1 WHERE gt.type IN (3,25)");
-    if (!roots)
+    QueryResult count = WorldDatabase.Query("SELECT COUNT(*) FROM scaled_item_variant_request");
+    if (!count)
+        return false;
+    if (!count->Fetch()[0].Get<uint64>())
+    {
+        LOG_INFO("server.loading", "ItemScaling: 0 pending requests; no new variants generated.");
         return true;
-
-    std::unordered_set<uint32> itemIds;
-    std::vector<uint32> references;
-    itemIds.reserve(static_cast<std::size_t>(roots->GetRowCount()));
-    references.reserve(static_cast<std::size_t>(roots->GetRowCount()));
-    auto collect = [&](uint32 item, int32 reference)
-    {
-        if (reference)
-            references.push_back(static_cast<uint32>(std::abs(reference)));
-        else if (item)
-            itemIds.insert(item);
-    };
-    do
-    {
-        Field* fields = roots->Fetch();
-        collect(fields[0].Get<uint32>(), fields[1].Get<int32>());
-    } while (roots->NextRow());
-    std::unordered_map<uint32, std::vector<std::pair<uint32, uint32>>> referenceRows;
-    QueryResult rows = WorldDatabase.Query("SELECT Entry,Item,Reference FROM reference_loot_template");
-    if (rows)
-    {
-        do
-        {
-            Field* fields = rows->Fetch();
-            referenceRows[fields[0].Get<uint32>()].emplace_back(
-                fields[1].Get<uint32>(), fields[2].Get<int32>());
-        } while (rows->NextRow());
-    }
-    std::unordered_set<uint32> visited;
-    visited.reserve(referenceRows.size());
-    while (!references.empty())
-    {
-        uint32 reference = references.back();
-        references.pop_back();
-        if (!visited.insert(reference).second)
-            continue;
-        auto it = referenceRows.find(reference);
-        if (it != referenceRows.end())
-            for (auto const& [item, nested] : it->second)
-                collect(item, nested);
     }
 
-    std::unordered_set<VariantKey, VariantKeyHash> existing;
-    QueryResult variants = WorldDatabase.Query(
-        "SELECT base_entry,target_effective_level,target_item_level,formula_version,generator_revision,"
-        "required_level FROM scaled_item_variant");
-    if (variants)
-    {
-        existing.reserve(static_cast<std::size_t>(variants->GetRowCount()));
-        do
-        {
-            existing.insert(ReadKey(variants->Fetch()));
-        } while (variants->NextRow());
-    }
-    std::size_t const persistedKeyCount = existing.size();
-    QueryResult bases = WorldDatabase.Query(
-        "SELECT {} FROM item_template b LEFT JOIN scaled_item_variant s ON s.variant_entry=b.entry "
-        "WHERE s.variant_entry IS NULL AND b.class IN (2,4) ORDER BY b.entry", BaseColumns);
-    if (!bases)
-        return true;
+    QueryResult result = WorldDatabase.Query(
+        "SELECT {},{},preserve_nonzero_stats FROM scaled_item_variant_request "
+        "ORDER BY requested_at,{}", KeyColumns, IdentityColumns, KeyColumns);
+    if (!result)
+        return false;
+    uint64 const found = result->GetRowCount();
+    uint32 created = 0;
+    uint32 redundant = 0;
+    uint32 stale = 0;
+    uint32 deferred = 0;
     auto transaction = WorldDatabase.BeginTransaction();
     std::vector<uint32> entries;
-    entries.reserve(250);
-    uint32 created = 0;
     do
     {
-        ItemTemplate base = ReadBaseTemplate(bases->Fetch());
-        if (!itemIds.count(base.ItemId) || !ItemScalingFormula::IsScalableEquipment(&base))
-            continue;
-        uint8 originalLevel = base.RequiredLevel ? static_cast<uint8>(base.RequiredLevel) :
-            static_cast<uint8>(std::clamp<uint32>(base.ItemLevel, 1, 80));
-        if (sItemScalingConfig->IsLevelExcluded(originalLevel))
-            continue;
-        for (uint32 target = sItemScalingConfig->MinLevel; target <= sItemScalingConfig->MaxLevel;
-            ++target)
+        Field* fields = result->Fetch();
+        VariantKey key = ReadKey(fields);
+        QueryResult existing = WorldDatabase.Query(
+            "SELECT variant_entry FROM scaled_item_variant WHERE {}", KeyPredicate(key));
+        if (existing)
         {
-            if (ItemScalingSafety::Bracket(target, sItemScalingConfig->MinLevel,
-                sItemScalingConfig->MaxLevel, sItemScalingConfig->BracketStep) != target)
-                continue;
-            if (target == originalLevel || (!sItemScalingConfig->ScaleUp && target > originalLevel) ||
-                (!sItemScalingConfig->ScaleDown && target < originalLevel))
-                continue;
-            uint16 ilvl = sItemScalingBaseline->CalculateTargetItemLevel(&base, target, originalLevel);
-            // Cover the configured dynamic window and bracket rounding. Unusual external scaling safely misses.
-            uint32 floor = std::max(sItemScalingConfig->DynamicFloorDungeons, sItemScalingConfig->DynamicFloorRaids);
-            uint32 ceiling = std::max(sItemScalingConfig->DynamicCeilingDungeons, sItemScalingConfig->DynamicCeilingRaids);
-            uint32 firstPlayer = target > ceiling ? target - ceiling : 1;
-            uint32 lastPlayer = std::min<uint32>(80, target + floor + sItemScalingConfig->BracketStep - 1);
-            if (sItemScalingConfig->Method == SCALING_METHOD_FIXED)
-            {
-                firstPlayer = target;
-                lastPlayer = std::min<uint32>(80, target + sItemScalingConfig->BracketStep - 1);
-            }
-            firstPlayer = std::max<uint32>(firstPlayer, sItemScalingConfig->MinLevel);
-            lastPlayer = std::min<uint32>(lastPlayer, sItemScalingConfig->MaxLevel);
-            for (uint32 playerLevel = firstPlayer; playerLevel <= lastPlayer; ++playerLevel)
-            {
-                uint8 required = ItemScalingFormula::CalculateRequiredLevel(&base, target, playerLevel);
-                VariantKey key{base.ItemId, static_cast<uint8>(target), ilvl,
-                    sItemScalingConfig->FormulaVersion, ITEM_SCALING_GENERATOR_REVISION, required};
-                if (!ValidKey(key) || existing.count(key))
-                    continue;
-                if (created >= sItemScalingConfig->MaxNewVariantsPerStartup ||
-                    _nextSyntheticEntry > sItemScalingConfig->SyntheticEntryMaximum)
-                {
-                    LOG_WARN("module.ItemScaling", "Startup generation limit reached after {} new variants. "
-                        "Unstaged drops retain their base items; later restarts can stage remaining variants.", created);
-                    bool const committed = CommitBatch(transaction, entries);
-                    if (committed)
-                    {
-                        auto const elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::steady_clock::now() - started);
-                        LOG_INFO("server.loading",
-                            "ItemScaling: staged {} variants from {} discovered loot items in {} ms.",
-                            created, itemIds.size(), elapsed.count());
-                    }
-                    return committed;
-                }
-                uint32 entry = static_cast<uint32>(_nextSyntheticEntry++);
-                ItemTemplate scaled = ItemScalingFormula::CreateScaledTemplate(&base, entry, target,
-                    ilvl, key.formulaVersion, playerLevel);
-                transaction->Append(BuildItemTemplateInsertSQL(scaled, base.ItemId));
-                transaction->Append(VariantInsert(entry, key));
-                entries.push_back(entry);
-                existing.insert(key);
-                ++created;
-                if (entries.size() >= 250 && !CommitBatch(transaction, entries))
-                    return false;
-            }
+            // A durable mapping owns this identity even if its template needs recovery.
+            WorldDatabase.DirectExecute(DeleteRequest(key));
+            ++redundant;
+            continue;
         }
-    } while (bases->NextRow());
-    bool const committed = CommitBatch(transaction, entries);
-    if (committed)
-    {
-        auto const elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - started);
-        LOG_INFO("server.loading",
-            "ItemScaling: staged {} new variants from {} discovered loot items; {} persisted keys checked in {} ms.",
-            created, itemIds.size(), persistedKeyCount, elapsed.count());
-    }
-    return committed;
+        if (!ValidKey(key) || key.generatorRevision != ITEM_SCALING_GENERATOR_REVISION ||
+            key.formulaVersion != sItemScalingConfig->FormulaVersion ||
+            fields[13].Get<uint8>() != uint8(sItemScalingConfig->PreserveNonZeroStats))
+        {
+            WorldDatabase.DirectExecute(DeleteRequest(key));
+            ++stale;
+            continue;
+        }
+        if (!_familyCompatible || created >= sItemScalingConfig->MaxNewVariantsPerStartup ||
+            _nextSyntheticEntry > sItemScalingConfig->SyntheticEntryMaximum)
+        {
+            ++deferred;
+            continue;
+        }
+        QueryResult row = WorldDatabase.Query(
+            "SELECT {} FROM item_template b WHERE b.entry={} "
+            "AND NOT EXISTS (SELECT 1 FROM scaled_item_variant s WHERE s.variant_entry=b.entry)",
+            BaseColumns, key.baseEntry);
+        if (!row)
+        {
+            ++deferred;
+            continue;
+        }
+        ItemTemplate base = ReadBaseTemplate(row->Fetch());
+        if (!ItemScalingFormula::IsScalableEquipment(&base))
+        {
+            ++deferred;
+            continue;
+        }
+        ItemScalingIdentity const identity = ReadIdentity(fields + 6);
+        uint32 entry = static_cast<uint32>(_nextSyntheticEntry++);
+        ItemTemplate scaled = ItemScalingFormula::CreateScaledTemplate(&base, entry,
+            key.targetEffectiveLevel, key.targetItemLevel, key.formulaVersion, key.requiredLevel);
+        scaled.RequiredLevel = key.requiredLevel;
+        identity.Apply(scaled);
+        transaction->Append(BuildItemTemplateInsertSQL(scaled, key.baseEntry));
+        transaction->Append(VariantInsert(entry, key, identity));
+        transaction->Append(DeleteCompletedRequest(key, entry));
+        entries.push_back(entry);
+        ++created;
+        if (entries.size() >= 250 && !CommitBatch(transaction, entries))
+            return false;
+    } while (result->NextRow());
+    if (!CommitBatch(transaction, entries))
+        return false;
+    LOG_INFO("server.loading", "ItemScaling: pending {}, materialized {}, redundant removed {}, stale retired {}, "
+        "deferred {} (missing/ineligible base or startup/ID limit).", found, created, redundant, stale, deferred);
+    if (stale)
+        LOG_WARN("module.ItemScaling", "Retired {} stale/invalid requests; gameplay may request the active family.", stale);
+    if (deferred)
+        LOG_WARN("module.ItemScaling", "{} requests remain pending; original items continue to drop.", deferred);
+    return true;
 }
 
 void ItemScalingRegistry::OnLoadCustomDatabaseTable()
@@ -556,111 +534,154 @@ void ItemScalingRegistry::OnLoadCustomDatabaseTable()
         sItemScalingConfig->FormulaVersion, ITEM_SCALING_GENERATOR_REVISION,
         sItemScalingConfig->MinLevel, sItemScalingConfig->MaxLevel, sItemScalingConfig->BracketStep);
     sItemScalingBaseline->BuildBaseline();
-    _dbSynchronized = SynchronizeExistingVariants() && PreStageDungeonLoot();
+    QueryResult family = WorldDatabase.Query(
+        "SELECT COUNT(*) FROM scaled_item_variant WHERE generator_revision={} AND formula_version={} "
+        "AND preserve_nonzero_stats IS NOT NULL AND preserve_nonzero_stats<>{}", ITEM_SCALING_GENERATOR_REVISION,
+        sItemScalingConfig->FormulaVersion, uint32(sItemScalingConfig->PreserveNonZeroStats));
+    if (!family)
+        return;
+    _familyCompatible = family->Fetch()[0].Get<uint64>() == 0;
+    if (!_familyCompatible)
+        LOG_WARN("module.ItemScaling", "PreserveNonZeroStats conflicts with the committed FormulaVersion family. "
+            "Increment FormulaVersion before generating new variants; existing issued items remain available.");
+    _dbSynchronized = SynchronizeExistingVariants() && MaterializePendingRequests();
 }
 
 void ItemScalingRegistry::Initialize()
 {
-    if (!_dbSynchronized || _initialized.load())
+    if (!_dbSynchronized || _initialized.load(std::memory_order_acquire))
         return;
 
-    auto const started = std::chrono::steady_clock::now();
+    QueryResult count = WorldDatabase.Query("SELECT COUNT(*) FROM scaled_item_variant");
+    if (!count)
+        return;
     QueryResult result = WorldDatabase.Query(
-        "SELECT variant_entry,base_entry,target_effective_level,target_item_level,formula_version,"
-        "generator_revision,required_level FROM scaled_item_variant");
-
-    std::size_t currentRevisionCount = 0;
-    std::size_t historicalRevisionCount = 0;
-    std::size_t correctedMetadataCount = 0;
-
+        "SELECT variant_entry,{},{},preserve_nonzero_stats FROM scaled_item_variant", KeyColumns, IdentityColumns);
+    if (count->Fetch()[0].Get<uint64>() != (result ? result->GetRowCount() : 0))
+    {
+        LOG_ERROR("module.ItemScaling", "Could not read the complete committed registry; scaling disabled.");
+        return;
+    }
+    uint32 validated = 0;
+    uint32 historical = 0;
+    uint32 backfilled = 0;
+    uint32 repaired = 0;
+    uint32 invalid = 0;
+    uint32 incompatible = 0;
     if (result)
     {
-        auto* templates = const_cast<ItemTemplateContainer*>(sObjectMgr->GetItemTemplateStore());
         _keyToEntry.reserve(static_cast<std::size_t>(result->GetRowCount()));
-
+        _syntheticEntries.reserve(static_cast<std::size_t>(result->GetRowCount()));
         do
         {
             Field* fields = result->Fetch();
             uint32 entry = fields[0].Get<uint32>();
             VariantKey key = ReadKey(fields + 1);
+            _syntheticEntries.insert(entry);
+            // Do not enqueue another request for a committed but unusable identity.
+            _requestedKeys.insert(key);
+            if (key.generatorRevision != ITEM_SCALING_GENERATOR_REVISION)
+                ++historical;
             ItemTemplate const* persisted = sObjectMgr->GetItemTemplate(entry);
             ItemTemplate const* base = sObjectMgr->GetItemTemplate(key.baseEntry);
-
-            if (!ValidKey(key) || entry == key.baseEntry || !persisted || !base ||
-                persisted->RequiredLevel != key.requiredLevel || persisted->ItemLevel != key.targetItemLevel)
+            if (!ValidKey(key) || !entry || entry == key.baseEntry || !base ||
+                !ItemScalingIdentity::CanCapture(*base))
             {
-                LOG_ERROR("module.ItemScaling",
-                    "Persisted variant {} failed validation; not published for runtime use.", entry);
+                ++invalid;
                 continue;
             }
-
-            auto itr = templates->find(entry);
-            if (itr == templates->end() || &itr->second != persisted)
+            ItemScalingIdentity const identity = ItemScalingIdentity::Capture(*base);
+            bool const missingIdentity = !HasIdentity(fields + 7);
+            if (missingIdentity || !ReadIdentity(fields + 7).Matches(*base))
             {
-                LOG_ERROR("module.ItemScaling",
-                    "Persisted variant {} is not backed by the core item-template store.", entry);
+                WorldDatabase.DirectExecute(
+                    "UPDATE scaled_item_variant SET base_class={},base_subclass={},base_sound_override_subclass={},"
+                    "base_material={},base_displayid={},base_inventory_type={},base_sheath={} WHERE variant_entry={}",
+                    identity.itemClass, identity.subClass, identity.soundOverrideSubclass, identity.material,
+                    identity.displayId, identity.inventoryType, identity.sheath, entry);
+                ++backfilled;
+            }
+            if (!persisted)
+            {
+                ++invalid;
                 continue;
             }
-
-            bool const correctedMetadata =
-                persisted->Class != base->Class ||
-                persisted->SubClass != base->SubClass ||
-                persisted->SoundOverrideSubclass != base->SoundOverrideSubclass ||
-                persisted->Material != base->Material ||
-                persisted->DisplayInfoID != base->DisplayInfoID ||
-                persisted->InventoryType != base->InventoryType ||
-                persisted->Sheath != base->Sheath;
-
-            itr->second = ItemScalingRuntimeTemplate::Build(*base, *persisted);
-
-            ItemTemplate const* published = sObjectMgr->GetItemTemplate(entry);
-            if (!published || published->ItemId != entry ||
-                published->RequiredLevel != key.requiredLevel ||
-                published->ItemLevel != key.targetItemLevel ||
-                published->Class != base->Class ||
-                published->SubClass != base->SubClass ||
-                published->SoundOverrideSubclass != base->SoundOverrideSubclass ||
-                published->Material != base->Material ||
-                published->DisplayInfoID != base->DisplayInfoID ||
-                published->InventoryType != base->InventoryType ||
-                published->Sheath != base->Sheath)
+            if (!identity.Matches(*persisted))
             {
-                LOG_ERROR("module.ItemScaling",
-                    "Persisted variant {} failed runtime publication validation.", entry);
+                // Correct only identity, never persisted scaled stats, keys, or entries. Core reloads next startup.
+                WorldDatabase.DirectExecute(
+                    "UPDATE item_template SET class={},subclass={},SoundOverrideSubclass={},Material={},displayid={},"
+                    "InventoryType={},sheath={} WHERE entry={}", identity.itemClass, identity.subClass,
+                    identity.soundOverrideSubclass, identity.material, identity.displayId, identity.inventoryType,
+                    identity.sheath, entry);
+                ++repaired;
                 continue;
             }
-
-            if (correctedMetadata)
-                ++correctedMetadataCount;
-
-            if (key.generatorRevision == ITEM_SCALING_GENERATOR_REVISION)
+            if (persisted->RequiredLevel != key.requiredLevel || persisted->ItemLevel != key.targetItemLevel)
             {
+                ++invalid;
+                continue;
+            }
+            if (!ItemScalingIdentity::CompatibleLootMetadata(*base, *persisted))
+            {
+                ++incompatible;
+                continue;
+            }
+            ++validated;
+            if (key.generatorRevision == ITEM_SCALING_GENERATOR_REVISION &&
+                key.formulaVersion == sItemScalingConfig->FormulaVersion &&
+                (fields[14].IsNull() || fields[14].Get<uint8>() == uint8(sItemScalingConfig->PreserveNonZeroStats)))
                 _keyToEntry.emplace(key, entry);
-                ++currentRevisionCount;
-            }
-            else
-                ++historicalRevisionCount;
         } while (result->NextRow());
     }
-
-    _initialized.store(true);
-    auto const elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - started);
-    LOG_INFO("server.loading",
-        "ItemScaling: published {} current-generator and {} historical variants from validated base templates; "
-        "indexed current-generator variants only; {} required DBC identity corrections; gameplay is lookup-only "
-        "({} ms).",
-        currentRevisionCount, historicalRevisionCount, correctedMetadataCount, elapsed.count());
+    _identityRepairRequired = repaired != 0;
+    // Publish immutable lookup tables only after all startup writes to them have finished.
+    _initialized.store(true, std::memory_order_release);
+    LOG_INFO("server.loading", "ItemScaling: validated {}, indexed {}, historical retained {}, identity metadata "
+        "backfilled {}, repairs requiring restart {}, unavailable/invalid {}.", validated, _keyToEntry.size(),
+        historical, backfilled, repaired, invalid);
+    if (incompatible)
+        LOG_WARN("module.ItemScaling", "{} variants withheld: inherited loot metadata differs from validated base. "
+            "Review source data; templates were not changed in memory.", incompatible);
+    if (repaired)
+        LOG_WARN("module.ItemScaling", "{} variants withheld from new loot until restart loads repaired identity.", repaired);
 }
 
-uint32 ItemScalingRegistry::FindVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,
-    uint16 targetItemLevel, uint8 formulaVersion, uint8 highestRealPlayerLevel) const
+uint32 ItemScalingRegistry::FindOrRequestVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,
+    uint16 targetItemLevel, uint8 formulaVersion, uint8 highestRealPlayerLevel)
 {
-    if (!baseProto || !_initialized.load())
+    if (!baseProto || !_initialized.load(std::memory_order_acquire) || _syntheticEntries.count(baseProto->ItemId))
         return 0;
     uint8 required = ItemScalingFormula::CalculateRequiredLevel(baseProto, targetEffectiveLevel, highestRealPlayerLevel);
     VariantKey key{baseProto->ItemId, targetEffectiveLevel, targetItemLevel, formulaVersion,
         ITEM_SCALING_GENERATOR_REVISION, required};
     auto it = _keyToEntry.find(key);
-    return it == _keyToEntry.end() ? 0 : it->second;
+    if (it != _keyToEntry.end())
+        return it->second;
+    if (_familyCompatible && sItemScalingConfig->DemandLedgerEnable && ValidKey(key) &&
+        ItemScalingIdentity::CanCapture(*baseProto))
+        QueueVariantRequest(key, *baseProto);
+    return 0;
+}
+
+void ItemScalingRegistry::QueueVariantRequest(VariantKey const& key, ItemTemplate const& base)
+{
+    {
+        std::lock_guard<std::mutex> lock(_requestMutex);
+        if (!_requestedKeys.insert(key).second)
+            return;
+    }
+    ItemScalingIdentity const identity = ItemScalingIdentity::Capture(base);
+    // Numeric fields only. Execute copies/enqueues the SQL; no DB round trip or ObjectMgr write on map workers.
+    WorldDatabase.Execute(
+        "INSERT IGNORE INTO scaled_item_variant_request "
+        "(base_entry,target_effective_level,target_item_level,formula_version,generator_revision,required_level,"
+        "base_class,base_subclass,base_sound_override_subclass,base_material,base_displayid,base_inventory_type,"
+        "base_sheath,preserve_nonzero_stats) VALUES ({},{},{},{},{},{},{},{},{},{},{},{},{},{})",
+        key.baseEntry, key.targetEffectiveLevel, key.targetItemLevel, key.formulaVersion, key.generatorRevision,
+        key.requiredLevel, identity.itemClass, identity.subClass, identity.soundOverrideSubclass, identity.material,
+        identity.displayId, identity.inventoryType, identity.sheath, uint32(sItemScalingConfig->PreserveNonZeroStats));
+    if (sItemScalingConfig->Debug)
+        LOG_INFO("module.ItemScaling", "Queued demand for base {}, target {}, item level {}, required {}.",
+            key.baseEntry, key.targetEffectiveLevel, key.targetItemLevel, key.requiredLevel);
 }
