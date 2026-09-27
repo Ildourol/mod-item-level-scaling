@@ -28,7 +28,7 @@ enum RequiredLevelPolicy : uint8
 };
 
 // Increment only when generator implementation changes can alter persisted template values.
-// Revision 1 represents every variant generated before this field was introduced.
+// Revision 1 is the initial static demand-ledger generator.
 inline constexpr uint8 ITEM_SCALING_GENERATOR_REVISION = 1;
 
 struct VariantKey

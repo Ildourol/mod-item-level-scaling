@@ -33,34 +33,58 @@ python3 tests/check_sql.py \
   --library-path /path/to/extracted/usr/lib/x86_64-linux-gnu
 ```
 
-The optional library path supports extracted dependencies. MariaDB bootstrap uses a disposable
-local datadir, strict SQL mode, no network listener, no credentials, and no application stack.
+For MySQL 8, run the same suite with the server and client binaries:
+
+```bash
+python3 tests/check_sql.py \
+  --core /path/to/azerothcore-wotlk \
+  --mysqld /path/to/mysql/bin/mysqld \
+  --mysql /path/to/mysql/bin/mysql
+```
+
+The optional `--library-path` supports extracted dependencies with either engine. MariaDB uses
+bootstrap mode; MySQL initializes a temporary datadir and uses a private Unix socket with both
+network listeners disabled. No existing database, credentials, or application stack is used.
+Both modes enforce strict SQL for metadata rejection and actually restart the database to check persistence.
 This extends the permanent existing SQL regression, not a live-stack/e2e test.
+
+When the environment prohibits sockets, replace `--mysql ...` with `--mysql-initialize-only`.
+That limited MySQL mode executes both installation routes, schema assertions, request dedupe,
+materialization and every module SELECT during temporary database initialization. It does **not**
+cover restart, NULL rejection or failed-transaction rollback; the full suite requires one of the
+normal modes above. The temporary database is always removed.
 
 Coverage includes:
 
-- Fresh pending/committed schema and legacy upgrades without changing old IDs, keys, or issued stats.
-- Repeatable migrations and six-column unique identities, including different RequiredLevel,
-  FormulaVersion, and generator revision; repeated pending requests collapse to one row.
-- Identity snapshot persistence and SQL types/signs matching the canonical item schema.
-- The actual C++ template/mapping SQL and completed-request deletion in one transaction.
-- Mapping failure rolls back the inserted template and retains the pending request.
+- One CREATE-only final schema, identical in the base and first-install updater files.
+- First module installation onto ordinary world data and fresh assembly followed by updater SQL.
+- Empty first-start tables, InnoDB engines and six-column unique identities.
+- Different RequiredLevel, FormulaVersion and generator revision remain distinct; duplicate requests collapse.
+- Complete metadata: SQL widths/signs match core, and all eight snapshot/provenance fields reject NULL.
+- Actual C++ template/mapping inserts and completed-request deletion in one transaction.
+- Every module SELECT call site, using its C++ SQL text and explicit fixture parameter bindings.
+- Exact-key request deletion leaves unrelated pending requests untouched.
+- A forced mapping failure rolls back the inserted template and retains the pending request.
 - A missing source row cannot insert a mapping or consume pending demand.
-- Current missing-template projection and restoration under the original ID.
-- Historical missing-template projection and a source guard preventing current-code regeneration.
-  This last check is static/SQL coverage, not execution of worldserver's recovery control flow.
+- A second DB invocation preserves committed IDs, values, metadata and pending requests.
+- A missing committed template keeps its mapping and allocator reservation.
+- Source checks for validation-only initialization, request suppression of committed keys, immutable snapshot
+  comparisons, current-family checks before generation and a non-blocking loot miss path. These checks do
+  not execute worldserver's initialization or stale-request control flow.
 
-The core SQL checker is designed for core directories. Its content checks apply to the new migration;
-it rejects changes in any `base` directory by policy. This module's explicitly requested fresh schema
-belongs in its own `sql/world/base`, so that directory-policy rejection is expected and must be
-reported separately from SQL execution results. Never move the schema into core to satisfy this rule.
+The core SQL checker assumes core directories. It rejects changes in any `base` directory by policy;
+this module owns its explicitly requested final schema in `sql/world/base`. Report that directory-policy
+result separately and run its SQL content checks on both installation files. Do not move module SQL
+into core to satisfy the directory rule.
 
 ## Manual/live checklist (not executed by these checks)
 
 Use an isolated realm with the canonical Playerbot core and mod-playerbots branches.
 
-- [ ] Clean install: both schemas validate; no demand means no new variants.
-- [ ] Upgrade: existing inventory/equipment IDs and scaled values remain unchanged.
+- [ ] First install onto an existing ordinary world DB: final schema validates; no demand creates no variants.
+- [ ] Empty core DB with module enabled: core population plus module updater creates the final tables.
+- [ ] Shell DB assembler path: final tables match the updater installation.
+- [ ] Subsequent normal restarts preserve generated IDs, complete metadata and item values.
 - [ ] First unseen drop: original item, exactly one pending key, no template or ID allocation.
 - [ ] Repeated identical drops before restart: original item, still one pending row.
 - [ ] Simultaneous identical map-worker/player/bot misses: one logical request.
@@ -76,9 +100,9 @@ Use an isolated realm with the canonical Playerbot core and mod-playerbots branc
 - [ ] Group loot; Playerbot loot; Playerbot Need/Greed.
 - [ ] Playerbot autogear, stat valuation and equip behavior.
 - [ ] Trade, mail, auction, guild bank, reconnect and tooltip/icon cache.
-- [ ] Legacy identity repair: withheld on repair startup, selected after clean restart; cache refreshes.
-- [ ] Missing current template with known snapshot/config recovers under the same ID.
-- [ ] Legacy unknown provenance defers recovery; historical generator is never regenerated.
+- [ ] Missing committed template: log and withhold; keep its key and ID reserved without reconstruction.
+- [ ] Mismatched committed identity/levels/loot metadata: withhold without changing database rows.
+- [ ] Inactive generation family: issued template still loads; no regeneration or new selection.
 - [ ] FormulaVersion/generator/PreserveNonZeroStats change retires stale pending requests.
 - [ ] Known family conflict requires FormulaVersion bump without rewriting committed items.
 - [ ] Missing base, startup cap and synthetic-ID exhaustion retain pending demand.

@@ -239,8 +239,6 @@ ItemScaling.SyntheticEntry.AutoOffset = 1000
 #        Description: Record exact gameplay requests asynchronously and materialize them next startup.
 #                     The first unseen combination drops the original item; restart before it can scale.
 #                     No dungeon-wide pre-generation or runtime template publication occurs.
-#                     If absent, the deprecated ItemScaling.PreStageDungeonLoot value is used.
-#                     An explicit new option overrides the legacy value.
 #        Default:     1 - Record and materialize demand
 #                     0 - Existing persisted variants only
 #

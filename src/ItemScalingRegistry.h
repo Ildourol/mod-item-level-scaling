@@ -26,15 +26,9 @@ public:
     [[nodiscard]] uint32 FindOrRequestVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,
         uint16 targetItemLevel, uint8 formulaVersion, uint8 highestRealPlayerLevel);
 
-    [[nodiscard]] bool RequiresIdentityRestart() const
-    {
-        return _initialized.load(std::memory_order_acquire) && _identityRepairRequired;
-    }
-
 private:
     bool ValidateSchema();
     bool ResolveSyntheticEntryRange();
-    bool SynchronizeExistingVariants();
     bool MaterializePendingRequests();
     void QueueVariantRequest(VariantKey const& key, ItemTemplate const& base);
 
@@ -43,7 +37,6 @@ private:
     std::mutex _requestMutex;
     std::unordered_set<VariantKey, VariantKeyHash> _requestedKeys;
     uint64 _nextSyntheticEntry{0};
-    bool _identityRepairRequired{false};
     bool _familyCompatible{true};
     bool _dbSynchronized{false};
     std::atomic<bool> _initialized{false};
