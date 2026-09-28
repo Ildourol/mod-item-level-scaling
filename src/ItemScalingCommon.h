@@ -28,8 +28,8 @@ enum RequiredLevelPolicy : uint8
 };
 
 // Increment only when generator implementation changes can alter persisted template values.
-// Revision 1 is the initial static demand-ledger generator.
-inline constexpr uint8 ITEM_SCALING_GENERATOR_REVISION = 1;
+// Revision 2 uses the effective DBC identity for eligibility and stat generation.
+inline constexpr uint8 ITEM_SCALING_GENERATOR_REVISION = 2;
 
 struct VariantKey
 {

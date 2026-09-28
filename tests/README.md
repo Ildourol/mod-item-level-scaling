@@ -17,6 +17,12 @@ Tests cover configuration bounds, bracket widths, permanent ID allocation/overfl
 target policy, six-field variant identity, repeated request-key deduplication, identity snapshots
 (including signed fields/range checks), and application of identity without changing scaled stats.
 
+`test_startup_identity.cpp` links the core's unmodified DBC loader sources into a small executable with
+a numeric database transport fixture. It exercises the production startup identity helper using an
+actual WDBC file, database overlay precedence, database-only entries, empty/missing sources, failed
+reads, enforcement on/off and changed identity across two loads. It also reports a 50,000-row fixture
+load/verification time. This is not a real database transport test or a worldserver startup benchmark.
+
 Run core C++ codestyle from this module root:
 
 ```bash
@@ -68,8 +74,12 @@ Coverage includes:
 - A missing source row cannot insert a mapping or consume pending demand.
 - A second DB invocation preserves committed IDs, values, metadata and pending requests.
 - A missing committed template keeps its mapping and allocator reservation.
+- Changed-base request retirement across database starts deletes only the exact key, consumes no ID,
+  preserves unrelated demand and committed snapshots, and permits a newly captured request.
+  This scenario executes the module's SQL; it does not execute the worldserver C++ control flow.
 - Source checks for validation-only initialization, request suppression of committed keys, immutable snapshot
-  comparisons, current-family checks before generation and a non-blocking loot miss path. These checks do
+  comparisons, identity resolution/checks before eligibility/allocation/generation, current-family checks
+  before generation and a non-blocking loot miss path. These checks do
   not execute worldserver's initialization or stale-request control flow.
 
 The core SQL checker assumes core directories. It rejects changes in any `base` directory by policy;
@@ -104,6 +114,14 @@ Use an isolated realm with the canonical Playerbot core and mod-playerbots branc
 - [ ] Mismatched committed identity/levels/loot metadata: withhold without changing database rows.
 - [ ] Inactive generation family: issued template still loads; no regeneration or new selection.
 - [ ] FormulaVersion/generator/PreserveNonZeroStats change retires stale pending requests.
+- [ ] Unchanged effective identity materializes when raw SQL differs from an enforced DBC entry.
+- [ ] Changed `Item.dbc`/`item_dbc` identity retires only the affected exact pending key before allocation.
+- [ ] With DBC enforcement off, a changed raw SQL identity retires the affected request.
+- [ ] With no matching DBC entry, the raw SQL identity determines eligibility and the comparison.
+- [ ] Gameplay after retirement captures a fresh snapshot; the next restart materializes it normally.
+- [ ] An unavailable identity source retains unprocessed demand and disables scaling for that run.
+- [ ] Revision-1 committed items remain unchanged/loadable; new matching demand uses revision 2.
+- [ ] Empty demand and disabled enforcement skip the private DBC load; inspect startup timing with demand.
 - [ ] Known family conflict requires FormulaVersion bump without rewriting committed items.
 - [ ] Missing base, startup cap and synthetic-ID exhaustion retain pending demand.
 - [ ] DB outage during enqueue leaves loot original; retry limitation matches README.

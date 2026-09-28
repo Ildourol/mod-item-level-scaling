@@ -111,6 +111,7 @@ variant = strings(function('std::string VariantInsert', '// DirectCommitTransact
 request_insert = query_after('WorldDatabase.Execute(')
 key_predicate = strings(function('std::string KeyPredicate', 'std::string DeleteRequest'))
 completed_delete = strings(function('std::string DeleteCompletedRequest', 'std::string VariantInsert'))
+retire_request = strings(function('std::string DeleteRequest', 'std::string DeleteCompletedRequest'))
 base_columns = query_after('std::string const BaseColumns =')
 base_sql = (module / 'sql/world/base/scaled_item_variant.sql').read_text()
 install_files = sorted((module / 'data/sql/db-world/updates').glob('*.sql'))
@@ -136,6 +137,15 @@ for guard in ['key.generatorRevision != ITEM_SCALING_GENERATOR_REVISION',
               'key.formulaVersion != sItemScalingConfig->FormulaVersion',
               'fields[13].Get<uint8>() != uint8(sItemScalingConfig->PreserveNonZeroStats)']:
     assert materialize.index(guard) < materialize.index('CreateScaledTemplate')
+assert materialize.index('0 pending requests') < materialize.index('ItemScalingStartupIdentity::Load')
+assert materialize.index('ItemScalingStartupIdentity::Load') < materialize.index('BeginTransaction')
+assert 'enforceIdentity && !ItemScalingStartupIdentity::Load' in materialize
+assert materialize.index('ItemScalingIdentity::Resolve') < materialize.index('if (!identity.Matches(base))')
+for operation in ['IsScalableEquipment', '_nextSyntheticEntry++', 'CreateScaledTemplate', 'transaction->Append']:
+    assert materialize.index('if (!identity.Matches(base))') < materialize.index(operation)
+drift_branch = materialize[materialize.index('if (!identity.Matches(base))'):materialize.index('IsScalableEquipment')]
+assert 'DirectExecute(DeleteRequest(key))' in drift_branch and 'continue;' in drift_branch
+assert '_nextSyntheticEntry' not in drift_branch and 'transaction->Append' not in drift_branch
 miss_path = source[source.index('uint32 ItemScalingRegistry::FindOrRequestVariant'):]
 assert not any(blocking in miss_path for blocking in ['WorldDatabase.Query', 'DirectExecute', 'CreateScaledTemplate'])
 
@@ -170,6 +180,9 @@ for table in ['item_template']:
     text = (args.core / 'data/sql/base/db_world' / (table + '.sql')).read_text()
     ddl = re.search(r'CREATE TABLE.*?\) ENGINE=.*?;', text, re.S).group(0)
     sql(ddl)
+item_dbc_text = (args.core / 'data/sql/base/db_world/item_dbc.sql').read_text()
+sql(re.search(r'CREATE TABLE.*?\) ENGINE=.*?;', item_dbc_text, re.S).group(0))
+sql('INSERT INTO item_dbc VALUES (100,4,4,-1,-1,12345,14,1)')
 # First module installation onto an existing ordinary world DB.
 sql("INSERT INTO item_template (entry,class,subclass,name,Quality,InventoryType,ItemLevel,RequiredLevel,"
     "stat_type1,stat_value1,stat_type3,stat_value3,armor,block,holy_res,fire_res,nature_res,frost_res,shadow_res,arcane_res) "
@@ -270,6 +283,9 @@ for snapshot, original in [('base_class', 'class'), ('base_subclass', 'subclass'
 # Exercise the shared partial-template projection, including a stat gap.
 sql('CREATE TABLE base_projection AS SELECT ' + base_columns + ' FROM item_template b WHERE entry=100')
 check('(SELECT stat_value3 FROM base_projection)=20')
+check('(SELECT SoundOverrideSubclass=-1 AND Material=0 AND displayid=0 AND sheath=0 FROM base_projection)')
+# These differing raw/DBC identities are intentional: only the C++ resolver decides which one is authoritative.
+check('(SELECT displayid<>DisplayInfoID FROM base_projection JOIN item_dbc ON entry=ID)')
 # Execute every module SELECT from its actual C++ string, including formatted projections.
 # Explicit bindings make newly introduced formatted queries require a fixture here.
 key_columns = query_after('std::string const KeyColumns =')
@@ -286,7 +302,7 @@ query_bindings = {
     'SELECT variant_entry,{},{},preserve_nonzero_stats': [(key_columns, identity_columns)],
 }
 query_count = 0
-for cpp in sorted((module / 'src').glob('*.cpp')):
+for cpp in sorted(p for p in (module / 'src').iterdir() if p.suffix in ('.cpp', '.h')):
     contents = cpp.read_text()
     queries = re.findall(r'WorldDatabase\.Query\(\s*((?:"(?:\\.|[^"\\])*"\s*)+)', contents)
     assert len(queries) == contents.count('WorldDatabase.Query('), 'Unrecognized query in ' + str(cpp)
@@ -303,8 +319,7 @@ for cpp in sorted((module / 'src').glob('*.cpp')):
 
 # The same exact-key deletion serves stale and redundant requests. Other demand must survive.
 sql('START TRANSACTION')
-sql(strings(function('std::string DeleteRequest', 'std::string DeleteCompletedRequest'))
-    + key_predicate.format(100, 53, 150, 2, 1, 50))
+sql(retire_request + key_predicate.format(100, 53, 150, 2, 1, 50))
 check('(SELECT COUNT(*) FROM scaled_item_variant_request)=2')
 check('(SELECT COUNT(*) FROM scaled_item_variant_request WHERE generator_revision=2)=1')
 sql('ROLLBACK')
@@ -394,4 +409,31 @@ with tempfile.TemporaryDirectory(prefix='item-scaling-sql-') as directory, sql_e
          'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM scaled_item_variant '
          'WHERE variant_entry=60001 AND required_level=53)=1,1,0))'])
     print('PASS: missing-template mappings keep permanent allocator reservations (initialization guard checked statically)',
+          flush=True)
+    # Persist demand, change one base between starts, then exercise the exact retirement SQL.
+    # C++ resolver tests determine drift; this SQL case verifies its persistence and deletion effects.
+    drift_base = values.copy()
+    drift_base[0] = 101
+    run(['USE fixture', insert.format(*drift_base), request(base=101), request(required=54)])
+    restart()
+    run(['USE fixture', 'UPDATE item_template SET displayid=54321 WHERE entry=101',
+         retire_request + key_predicate.format(101, 53, 150, 1, 1, 50),
+         'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM scaled_item_variant_request WHERE base_entry=101)=0,1,0))',
+         'INSERT INTO assertions VALUES (IF((SELECT MAX(variant_entry) FROM scaled_item_variant)=60001,1,0))',
+         'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM item_template WHERE entry=60002)=0,1,0))',
+         'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM scaled_item_variant_request WHERE '
+         + key_predicate.format(100, 53, 150, 1, 1, 54) + ')=1,1,0))'])
+    # The unaffected request gets the very next ID. Drift consumed no committed ID or mapping.
+    unchanged_values = values.copy()
+    unchanged_values[0], unchanged_values[7] = 60002, 54
+    run(['USE fixture', 'START TRANSACTION', insert.format(*unchanged_values), mapping(60002, required=54),
+         delete_request(required=54, entry=60002), 'COMMIT',
+         'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM scaled_item_variant WHERE variant_entry=60002)=1,1,0))',
+         'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM scaled_item_variant_request WHERE '
+         + key_predicate.format(100, 53, 150, 1, 1, 54) + ')=0,1,0))'])
+    # Gameplay can record the same retired key with a new snapshot; original committed rows remain unchanged.
+    run(['USE fixture', request(base=101).replace('12345', '54321'),
+         'INSERT INTO assertions VALUES (IF((SELECT base_displayid FROM scaled_item_variant_request WHERE base_entry=101)=54321,1,0))',
+         'INSERT INTO assertions VALUES (IF((SELECT base_displayid FROM scaled_item_variant WHERE variant_entry=60000)=12345,1,0))'])
+    print('PASS: drift retirement across starts affects one key, leaves allocation available, and permits a fresh snapshot',
           flush=True)

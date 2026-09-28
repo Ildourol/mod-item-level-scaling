@@ -31,7 +31,16 @@ with tempfile.TemporaryDirectory(prefix='item-scaling-check-') as directory:
         raise AssertionError('Unresolved module symbols: ' + '\n'.join(unresolved))
     for source in sorted((module / 'tests').glob('test_*.cpp')):
         target = out / source.stem
-        subprocess.run([args.cxx, *flags, str(source), '-o', str(target)], check=True)
-        subprocess.run([str(target)], check=True)
+        extra_flags, extra_sources, arguments = [], [], []
+        if source.stem == 'test_startup_identity':
+            # Exercise the real core DBC file/overlay loaders with an isolated numeric DB transport.
+            extra_flags = ['-I' + str(module / 'tests/dbc_stubs'), '-DFMT_HEADER_ONLY']
+            extra_sources = [str(core / p) for p in [
+                'src/common/DataStores/DBCFileLoader.cpp',
+                'src/server/shared/DataStores/DBCStore.cpp',
+                'src/server/shared/DataStores/DBCDatabaseLoader.cpp']]
+            arguments = [str(out)]
+        subprocess.run([args.cxx, *extra_flags, *flags, str(source), *extra_sources, '-o', str(target)], check=True)
+        subprocess.run([str(target), *arguments], check=True)
         print('PASS regression:', source.name, flush=True)
 print('PASS: module object compilation, module symbol resolution, and C++ regressions')

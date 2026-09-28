@@ -5,14 +5,17 @@
 #include "ItemScalingRegistry.h"
 #include "ItemScalingSafety.h"
 #include "DatabaseEnv.h"
+#include "DBCfmt.h"
 #include "QueryResult.h"
 #include "ItemScalingBaseline.h"
 #include "ItemScalingConfig.h"
 #include "ItemScalingFormula.h"
 #include "ItemScalingIdentity.h"
+#include "ItemScalingStartupIdentity.h"
 #include "Log.h"
 #include "ObjectMgr.h"
 #include "StringFormat.h"
+#include "Timer.h"
 #include "World.h"
 #include <cstddef>
 #include <string>
@@ -105,7 +108,8 @@ namespace
         "b.stat_type7,b.stat_value7,b.stat_type8,b.stat_value8,b.stat_type9,b.stat_value9,"
         "b.stat_type10,b.stat_value10,b.dmg_min1,b.dmg_max1,b.dmg_type1,b.dmg_min2,b.dmg_max2,"
         "b.dmg_type2,b.armor,b.delay,b.block,b.holy_res,b.fire_res,b.nature_res,b.frost_res,"
-        "b.shadow_res,b.arcane_res,b.ScalingStatDistribution,b.ScalingStatValue";
+        "b.shadow_res,b.arcane_res,b.ScalingStatDistribution,b.ScalingStatValue,"
+        "b.SoundOverrideSubclass,b.Material,b.displayid,b.sheath";
 
     ItemTemplate ReadBaseTemplate(Field* fields)
     {
@@ -143,6 +147,11 @@ namespace
         item.ArcaneRes = fields[41].Get<int16>();
         item.ScalingStatDistribution = fields[42].Get<uint16>();
         item.ScalingStatValue = fields[43].Get<uint32>();
+        // Append identity fields so the established stat/damage projection keeps its offsets.
+        item.SoundOverrideSubclass = fields[44].Get<int8>();
+        item.Material = fields[45].Get<int8>();
+        item.DisplayInfoID = fields[46].Get<uint32>();
+        item.Sheath = fields[47].Get<uint8>();
         return item;
     }
 
@@ -387,6 +396,19 @@ bool ItemScalingRegistry::MaterializePendingRequests()
         return true;
     }
 
+    bool const enforceIdentity = sWorld->getBoolConfig(CONFIG_DBC_ENFORCE_ITEM_ATTRIBUTES);
+    DBCStorage<ItemEntry> startupItems(Itemfmt);
+    uint32 const identityLoadStarted = getMSTime();
+    if (enforceIdentity && !ItemScalingStartupIdentity::Load(startupItems, sWorld->GetDataPath() + "dbc/Item.dbc"))
+    {
+        LOG_ERROR("module.ItemScaling", "Cannot verify Item.dbc/item_dbc identity sources; "
+            "pending requests retained and scaling disabled for this run.");
+        return false;
+    }
+    if (enforceIdentity)
+        LOG_INFO("server.loading", "ItemScaling: checked startup item identity sources in {} ms.",
+            GetMSTimeDiffToNow(identityLoadStarted));
+
     QueryResult result = WorldDatabase.Query(
         "SELECT {},{},preserve_nonzero_stats FROM scaled_item_variant_request "
         "ORDER BY requested_at,{}", KeyColumns, IdentityColumns, KeyColumns);
@@ -396,6 +418,7 @@ bool ItemScalingRegistry::MaterializePendingRequests()
     uint32 created = 0;
     uint32 redundant = 0;
     uint32 stale = 0;
+    uint32 identityChanged = 0;
     uint32 deferred = 0;
     auto transaction = WorldDatabase.BeginTransaction();
     std::vector<uint32> entries;
@@ -436,12 +459,31 @@ bool ItemScalingRegistry::MaterializePendingRequests()
             continue;
         }
         ItemTemplate base = ReadBaseTemplate(row->Fetch());
+        ItemScalingIdentity const identity = ReadIdentity(fields + 6);
+        ItemScalingIdentity::Resolve(base, startupItems.LookupEntry(key.baseEntry), enforceIdentity).Apply(base);
+        if (!ItemScalingIdentity::CanCapture(base))
+        {
+            LOG_ERROR("module.ItemScaling", "Base {} has an effective identity outside snapshot SQL ranges; "
+                "request retained and scaling disabled for this run.", key.baseEntry);
+            return false;
+        }
+        if (!identity.Matches(base))
+        {
+            WorldDatabase.DirectExecute(DeleteRequest(key));
+            ++identityChanged;
+            // Bound detail even when an administrator changes many base definitions at once.
+            if (identityChanged <= 5)
+                LOG_WARN("module.ItemScaling", "Retired pending request for base {}, target {}, item level {}, "
+                    "formula {}, generator {}, required {}: effective base identity changed; no ID allocated.",
+                    key.baseEntry, key.targetEffectiveLevel, key.targetItemLevel, key.formulaVersion,
+                    key.generatorRevision, key.requiredLevel);
+            continue;
+        }
         if (!ItemScalingFormula::IsScalableEquipment(&base))
         {
             ++deferred;
             continue;
         }
-        ItemScalingIdentity const identity = ReadIdentity(fields + 6);
         uint32 entry = static_cast<uint32>(_nextSyntheticEntry++);
         ItemTemplate scaled = ItemScalingFormula::CreateScaledTemplate(&base, entry,
             key.targetEffectiveLevel, key.targetItemLevel, key.formulaVersion, key.requiredLevel);
@@ -458,7 +500,11 @@ bool ItemScalingRegistry::MaterializePendingRequests()
     if (!CommitBatch(transaction, entries))
         return false;
     LOG_INFO("server.loading", "ItemScaling: pending {}, materialized {}, redundant removed {}, stale retired {}, "
-        "deferred {} (missing/ineligible base or startup/ID limit).", found, created, redundant, stale, deferred);
+        "identity changed {}, deferred {} (missing/ineligible base or startup/ID limit).",
+        found, created, redundant, stale, identityChanged, deferred);
+    if (identityChanged)
+        LOG_WARN("module.ItemScaling", "Retired {} requests with changed base identity; "
+            "gameplay may request the current identity. No synthetic IDs were allocated for these requests.", identityChanged);
     if (stale)
         LOG_WARN("module.ItemScaling", "Retired {} stale/invalid requests; gameplay may request the active family.", stale);
     if (deferred)

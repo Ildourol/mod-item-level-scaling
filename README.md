@@ -8,7 +8,7 @@ custom client Item.dbc, or runtime ItemTemplate publication is required.
 
 Install the module under `modules/mod-item-level-scaling` in the canonical Playerbot core source tree,
 include it in your worldserver build, and copy `conf/mod_item_level_scaling.conf.dist` into your server's
-module configuration directory. The module starts with formula version 1 and generator revision 1.
+module configuration directory. The default formula version is 1; the current generator revision is 2.
 
 Both module tables are created directly with their final schema:
 
@@ -36,7 +36,8 @@ The installation SQL does not transform an incompatible existing module schema.
    target ItemLevel, FormulaVersion, generator revision, and RequiredLevel.
 3. On a first unseen key, the original item drops. One asynchronous `INSERT IGNORE` records the request,
    including the validated base identity and stat-preservation setting.
-4. At the next startup, only persisted pending requests are materialized. In one InnoDB transaction,
+4. At the next startup, each pending request's saved identity is checked against the effective base
+   identity that AzerothCore will load. Only matching requests are materialized. In one InnoDB transaction,
    the module inserts the static `item_template`, inserts the complete committed mapping, and deletes
    the completed request. AzerothCore then loads the item through `ObjectMgr::LoadItemTemplates()`.
 5. The module validates and indexes the loaded templates. Future matching drops select the permanent
@@ -61,6 +62,23 @@ The identity snapshot contains class, subclass, sound override subclass, materia
 inventory type, and sheath. These match the core's DBC-enforced fields and their SQL widths/signs.
 Gameplay captures them from the validated base template. Startup clones the ordinary base SQL row,
 overrides those fields with the snapshot, and writes complete metadata into the committed mapping.
+
+Before allocating an ID, startup resolves the base identity using the same file-first, database-second
+order as the core: a private `Item.dbc` store with the `item_dbc` overlay. With `DBC.EnforceItemAttributes`
+enabled, an available DBC entry supplies those seven fields. With enforcement disabled or no matching
+DBC entry, the ordinary base SQL fields apply. Eligibility and formula generation use that resolved
+identity too; raw SQL differing from an unchanged enforced DBC entry is not a changed identity.
+
+A confirmed identity change retires only that exact pending request, without allocating an ID or
+creating an item/mapping. Later gameplay can capture the new identity and request it again for another
+startup. A missing base remains pending. If the identity sources cannot be verified, or an effective
+identity cannot fit the snapshot's SQL types, materialization stops and scaling is disabled for that
+run; unprocessed requests remain pending. The check does not snapshot or detect changes to rarity,
+stats, spells or every other base field.
+
+The private identity store is loaded only when there is pending demand and DBC enforcement is enabled,
+and is released before the hook returns. Startup logs its load/verification time. This adds a temporary
+DBC load and database overlay verification, with no additional gameplay work or global DBC mutation.
 
 Initialization only reads, validates and indexes. A missing template or a mismatch in identity,
 levels, or loot-sensitive inherited metadata withholds the variant from new drops and logs the issue.
@@ -106,6 +124,12 @@ the active formula version, generator revision or setting is retired with a warn
 can request the active family. Committed rows are never regenerated or rekeyed. The module cannot
 detect arbitrary edits to formula inputs, so keep those inputs stable within a family.
 
+Generator revision 2 accounts for using the resolved class, subclass and inventory type in eligibility
+and stat generation. Existing revision-1 templates, IDs and stats are unchanged and still load normally,
+but the active lookup selects revision-2 keys. Revision-1 pending requests are retired by the same
+family-safety check; gameplay can request the current family. There is no schema migration or automatic
+conversion of committed items. The client cache salt is unchanged because issued entries are not rewritten.
+
 ## Loot safety and Playerbots
 
 Quest-required loot retains its original entry for quest checks. MaxCount, unique-equipped items,
@@ -131,7 +155,8 @@ before an asynchronous insert completes can lose that request while the original
 Process dedupe permits one enqueue per key, so failed inserts are retried only when a new process
 encounters that combination. Once committed, a request survives restart. Materialization failure rolls
 back its transaction and retains demand; batch verification checks template/mapping completeness and
-request removal before enabling scaling. Do not edit base data during startup generation.
+request removal before enabling scaling. Do not edit `item_template`, `item_dbc` or `Item.dbc` during
+startup: the identity check and the core's subsequent item load require stable source data.
 
 The normal player-session cache hook uses a stable module salt. Synthetic IDs are permanent and
 committed metadata is immutable; no special restart state or client patch is required.

@@ -31,6 +31,20 @@ struct ItemScalingIdentity
             item.InventoryType, item.Sheath};
     }
 
+    static ItemScalingIdentity FromDBC(ItemEntry const& item)
+    {
+        return {item.ClassID, item.SubclassID, item.SoundOverrideSubclassID, item.Material,
+            item.DisplayInfoID, item.InventoryType, item.SheatheType};
+    }
+
+    // Match ObjectMgr::LoadItemTemplates: DB-overlaid DBC fields win only when enforcement is enabled.
+    static ItemScalingIdentity Resolve(ItemTemplate const& raw, ItemEntry const* dbc, bool enforce)
+    {
+        return enforce && dbc ? FromDBC(*dbc) : Capture(raw);
+    }
+
+    bool operator==(ItemScalingIdentity const&) const = default;
+
     bool Matches(ItemTemplate const& item) const
     {
         return item.Class == itemClass && item.SubClass == subClass &&
