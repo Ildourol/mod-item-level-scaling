@@ -733,6 +733,20 @@ void ItemScalingRegistry::Initialize()
             "metadata failed validation. Review the data; committed rows were not changed.", invalid + incompatible);
 }
 
+uint32 ItemScalingRegistry::FindExistingVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,
+    uint16 targetItemLevel, uint8 formulaVersion, uint8 highestRealPlayerLevel, int32 randomPropertyId) const
+{
+    if (!baseProto || !_initialized.load(std::memory_order_acquire) || _syntheticEntries.count(baseProto->ItemId))
+        return 0;
+    uint8 required = ItemScalingFormula::CalculateRequiredLevel(baseProto, targetEffectiveLevel, highestRealPlayerLevel);
+    VariantKey key{baseProto->ItemId, targetEffectiveLevel, targetItemLevel, formulaVersion,
+        ITEM_SCALING_GENERATOR_REVISION, required, randomPropertyId};
+    auto it = _keyToEntry.find(key);
+    if (it != _keyToEntry.end())
+        return it->second;
+    return 0;
+}
+
 uint32 ItemScalingRegistry::FindOrRequestVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,
     uint16 targetItemLevel, uint8 formulaVersion, uint8 highestRealPlayerLevel, int32 randomPropertyId)
 {

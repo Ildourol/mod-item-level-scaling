@@ -4,9 +4,11 @@
 
 void AddItemScalingWorldScripts();
 void AddItemScalingLootScripts();
+void AddItemScalingCommandScripts();
 
 void Addmod_item_level_scalingScripts()
 {
     AddItemScalingWorldScripts();
     AddItemScalingLootScripts();
+    AddItemScalingCommandScripts();
 }

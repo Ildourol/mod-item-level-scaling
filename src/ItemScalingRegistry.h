@@ -26,6 +26,14 @@ public:
     [[nodiscard]] uint32 FindOrRequestVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,
         uint16 targetItemLevel, uint8 formulaVersion, uint8 highestRealPlayerLevel, int32 randomPropertyId = 0);
 
+    // Diagnostics and inspection without queuing database requests
+    [[nodiscard]] size_t GetIndexedVariantCount() const { return _keyToEntry.size(); }
+    [[nodiscard]] size_t GetSyntheticEntryCount() const { return _syntheticEntries.size(); }
+    [[nodiscard]] bool IsInitialized() const { return _initialized.load(std::memory_order_acquire); }
+    [[nodiscard]] bool IsDbSynchronized() const { return _dbSynchronized; }
+    [[nodiscard]] uint32 FindExistingVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,
+        uint16 targetItemLevel, uint8 formulaVersion, uint8 highestRealPlayerLevel, int32 randomPropertyId = 0) const;
+
 private:
     void EnsureSchema();
     bool ValidateSchema();

@@ -97,7 +97,7 @@ void ItemScalingConfig::Load(bool reload)
     DynamicFloorRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Raids", 5)));
     DynamicCeilingRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Raids", 3)));
 
-    UseAutoBalanceSettings = sConfigMgr->GetOption<bool>("ItemScaling.UseAutoBalanceSettings", false);
+    UseAutoBalanceSettings = sConfigMgr->GetOption<bool>("ItemScaling.UseAutoBalanceSettings", true);
     if (UseAutoBalanceSettings)
     {
         std::string abMethod = sConfigMgr->GetOption<std::string>("AutoBalance.LevelScaling.Method", "", false);

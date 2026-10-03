@@ -230,11 +230,11 @@ ItemScaling.Dynamic.Ceiling.Raids = 3
 #    ItemScaling.UseAutoBalanceSettings
 #        Description: If mod-autobalance is loaded, automatically adopt its configured LevelScaling.Method,
 #                     Dynamic.Floor, and Dynamic.Ceiling settings for instance types.
-#        Default:     0 - Disabled (use ItemScaling.* config values exclusively)
-#                     1 - Enabled
+#        Default:     1 - Enabled
+#                     0 - Disabled (use ItemScaling.* config values exclusively)
 #
 
-ItemScaling.UseAutoBalanceSettings = 0
+ItemScaling.UseAutoBalanceSettings = 1
 
 #
 #    ItemScaling.SyntheticEntry.Start
