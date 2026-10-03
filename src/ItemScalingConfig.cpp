@@ -6,6 +6,7 @@
 #include "ItemScalingSafety.h"
 #include "Tokenize.h"
 #include "StringConvert.h"
+#include "Log.h"
 #include <string_view>
 #include <algorithm>
 
@@ -15,8 +16,31 @@ ItemScalingConfig* ItemScalingConfig::instance()
     return &instance;
 }
 
-void ItemScalingConfig::Load()
+void ItemScalingConfig::Load(bool reload)
 {
+    if (reload)
+    {
+        uint8 newFormula = static_cast<uint8>(std::clamp<uint32>(
+            sConfigMgr->GetOption<uint32>("ItemScaling.FormulaVersion", 1), 1, 255));
+        bool newDemand = sConfigMgr->GetOption<bool>("ItemScaling.DemandLedger.Enable", true);
+        bool newPreserve = sConfigMgr->GetOption<bool>("ItemScaling.PreserveNonZeroStats", true);
+        uint32 newRandomMode = sConfigMgr->GetOption<uint32>("ItemScaling.RandomSuffix.Mode", 0);
+        RandomSuffixScalingMode expectedRandomMode = (newRandomMode == 1) ? RandomSuffixScalingMode::Bake : RandomSuffixScalingMode::Skip;
+
+        if (newFormula != FormulaVersion || newDemand != DemandLedgerEnable || newPreserve != PreserveNonZeroStats || expectedRandomMode != RandomSuffixMode)
+        {
+            LOG_WARN("module.ItemScaling",
+                "ItemScaling: Schema invariant options (FormulaVersion, PreserveNonZeroStats, DemandLedger.Enable, RandomSuffix.Mode) "
+                "cannot be changed live and require a worldserver restart. Current persistent invariants remain active.");
+        }
+    }
+    else
+    {
+        PreserveNonZeroStats = sConfigMgr->GetOption<bool>("ItemScaling.PreserveNonZeroStats", true);
+        uint32 randomModeVal = sConfigMgr->GetOption<uint32>("ItemScaling.RandomSuffix.Mode", 0);
+        RandomSuffixMode = (randomModeVal == 1) ? RandomSuffixScalingMode::Bake : RandomSuffixScalingMode::Skip;
+    }
+
     Enable = sConfigMgr->GetOption<bool>("ItemScaling.Enable", true);
     ScaleDungeons = sConfigMgr->GetOption<bool>("ItemScaling.ScaleDungeons", true);
     ScaleRaids = sConfigMgr->GetOption<bool>("ItemScaling.ScaleRaids", true);
@@ -53,8 +77,6 @@ void ItemScalingConfig::Load()
     ScaleLegendary = sConfigMgr->GetOption<bool>("ItemScaling.ScaleLegendary", true);
     ScaleArtifact = sConfigMgr->GetOption<bool>("ItemScaling.ScaleArtifact", true);
     ScaleHeirloom = sConfigMgr->GetOption<bool>("ItemScaling.ScaleHeirloom", false);
-
-    PreserveNonZeroStats = sConfigMgr->GetOption<bool>("ItemScaling.PreserveNonZeroStats", true);
 
     std::string reqPolicyStr = sConfigMgr->GetOption<std::string>("ItemScaling.RequiredLevel.Policy", "target");
     if (reqPolicyStr == "player")
@@ -98,33 +120,37 @@ void ItemScalingConfig::Load()
             "AutoBalance.LevelScaling.DynamicLevel.Floor.Raids", DynamicFloorRaids, false)));
     }
 
-    std::string syntheticStartStr = sConfigMgr->GetOption<std::string>("ItemScaling.SyntheticEntry.Start", "auto");
-    if (syntheticStartStr == "auto" || syntheticStartStr == "0")
+    if (!reload)
     {
-        AutoSyntheticEntry = true;
-        SyntheticEntryStart = 0;
-    }
-    else
-    {
-        AutoSyntheticEntry = false;
-        if (Optional<uint32> val = Acore::StringTo<uint32>(syntheticStartStr))
+        std::string syntheticStartStr = sConfigMgr->GetOption<std::string>("ItemScaling.SyntheticEntry.Start", "auto");
+        if (syntheticStartStr == "auto" || syntheticStartStr == "0")
         {
-            SyntheticEntryStart = *val;
+            AutoSyntheticEntry = true;
+            SyntheticEntryStart = 0;
         }
         else
         {
-            SyntheticEntryStart = 60000;
+            AutoSyntheticEntry = false;
+            if (Optional<uint32> val = Acore::StringTo<uint32>(syntheticStartStr))
+            {
+                SyntheticEntryStart = *val;
+            }
+            else
+            {
+                SyntheticEntryStart = 60000;
+            }
         }
+
+        SyntheticEntryAutoOffset = sConfigMgr->GetOption<uint32>("ItemScaling.SyntheticEntry.AutoOffset", 1000);
+        DemandLedgerEnable = sConfigMgr->GetOption<bool>("ItemScaling.DemandLedger.Enable", true);
+        MaxNewVariantsPerStartup = std::clamp<uint32>(
+            sConfigMgr->GetOption<uint32>("ItemScaling.MaxNewVariantsPerStartup", 25000), 1, 250000);
+        SyntheticEntryMaximum = std::clamp<uint32>(
+            sConfigMgr->GetOption<uint32>("ItemScaling.SyntheticEntry.Maximum", 2000000), 60000, 10000000);
+        FormulaVersion = static_cast<uint8>(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("ItemScaling.FormulaVersion", 1), 1, 255));
     }
 
-    SyntheticEntryAutoOffset = sConfigMgr->GetOption<uint32>("ItemScaling.SyntheticEntry.AutoOffset", 1000);
-    DemandLedgerEnable = sConfigMgr->GetOption<bool>("ItemScaling.DemandLedger.Enable", true);
-    MaxNewVariantsPerStartup = std::clamp<uint32>(
-        sConfigMgr->GetOption<uint32>("ItemScaling.MaxNewVariantsPerStartup", 25000), 1, 250000);
-    SyntheticEntryMaximum = std::clamp<uint32>(
-        sConfigMgr->GetOption<uint32>("ItemScaling.SyntheticEntry.Maximum", 2000000), 60000, 10000000);
     BracketStep = static_cast<uint8>(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("ItemScaling.BracketStep", 1), 1, 10));
-    FormulaVersion = static_cast<uint8>(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("ItemScaling.FormulaVersion", 1), 1, 255));
 
     ExcludedLevels.clear();
     std::string excludedLevelsStr = sConfigMgr->GetOption<std::string>("ItemScaling.ExcludedLevels", "");

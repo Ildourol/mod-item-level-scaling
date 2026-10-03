@@ -37,6 +37,18 @@ static bool IsBotSession(Session const* session)
     return false;
 }
 
+static bool IsValidDropSource(Creature const* creature)
+{
+    if (!creature)
+        return false;
+    if (creature->IsCritter() || creature->IsTotem() || creature->IsPet() || creature->IsSummon())
+        return false;
+    if (CreatureTemplate const* cInfo = creature->GetCreatureTemplate())
+        if (cInfo->type == CREATURE_TYPE_CRITTER)
+            return false;
+    return true;
+}
+
 static uint8 GetHighestEligibleRealPlayerLevel(Map const* map)
 {
     if (!map)
@@ -188,6 +200,11 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
         creature = map->GetCreature(loot->sourceWorldObjectGUID);
         if (creature)
         {
+            if (!IsValidDropSource(creature))
+            {
+                return;
+            }
+
             CreatureTemplate const* cInfo = creature->GetCreatureTemplate();
             if (cInfo)
             {
@@ -353,13 +370,42 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
             return;
         }
 
+        bool const hasRandomProps = (baseProto->RandomSuffix != 0 || baseProto->RandomProperty != 0);
+
+        // Approach 1 (Default: Skip): Leave random suffix/property gear unscaled so original tooltip is preserved
+        if (hasRandomProps && sItemScalingConfig->RandomSuffixMode == RandomSuffixScalingMode::Skip)
+        {
+            if (sItemScalingConfig->Debug)
+            {
+                LOG_INFO("module.ItemScaling", "ItemScaling: Skipped item {} '{}' (RandomSuffixMode is Skip)",
+                    baseProto->ItemId, baseProto->Name1);
+            }
+            return;
+        }
+
+        int32 randomPropId = 0;
+        if (hasRandomProps && sItemScalingConfig->RandomSuffixMode == RandomSuffixScalingMode::Bake)
+        {
+            // Approach 2: Use the already-rolled random property ID from core, or roll it if not set yet
+            randomPropId = item.randomPropertyId;
+            if (randomPropId == 0)
+            {
+                randomPropId = Item::GenerateItemRandomPropertyId(baseProto->ItemId);
+            }
+            if (randomPropId == 0)
+            {
+                return;
+            }
+        }
+
         // An exact miss records demand and leaves this occurrence unchanged.
         uint32 variantEntry = sItemScalingRegistry->FindOrRequestVariant(
             baseProto,
             lTarget,
             targetIlvl,
             sItemScalingConfig->FormulaVersion,
-            highestRealPlayerLevel
+            highestRealPlayerLevel,
+            randomPropId
         );
 
         if (variantEntry != 0 && variantEntry != item.itemid &&
@@ -367,9 +413,18 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
         {
             item.itemid = variantEntry;
 
-            // Match LootItem construction using the final entry for all three random-metadata cases.
-            item.randomSuffix = GenerateEnchSuffixFactor(variantEntry);
-            item.randomPropertyId = Item::GenerateItemRandomPropertyId(variantEntry);
+            if (randomPropId != 0)
+            {
+                // In Bake mode, stats & title are fixed in item_template; clear instance random fields
+                item.randomSuffix = 0;
+                item.randomPropertyId = 0;
+            }
+            else
+            {
+                // Match LootItem construction using the final entry for standard fixed-stat cases
+                item.randomSuffix = GenerateEnchSuffixFactor(variantEntry);
+                item.randomPropertyId = Item::GenerateItemRandomPropertyId(variantEntry);
+            }
 
             if (sItemScalingConfig->Debug)
             {

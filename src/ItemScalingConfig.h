@@ -14,7 +14,7 @@ class ItemScalingConfig
 public:
     static ItemScalingConfig* instance();
 
-    void Load();
+    void Load(bool reload = false);
 
     bool Enable{true};
     bool ScaleDungeons{true};
@@ -38,6 +38,8 @@ public:
     bool ScaleLegendary{true};
     bool ScaleArtifact{true};
     bool ScaleHeirloom{false};
+
+    RandomSuffixScalingMode RandomSuffixMode{RandomSuffixScalingMode::Skip};
 
     bool PreserveNonZeroStats{true};
     RequiredLevelPolicy ReqLevelPolicy{REQ_POLICY_TARGET};

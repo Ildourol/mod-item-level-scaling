@@ -57,13 +57,11 @@ void ItemScalingWorldScript::OnBeforeWorldInitialized()
 
 void ItemScalingWorldScript::OnAfterConfigLoad(bool reload)
 {
-    // Startup-generated templates depend on an immutable configuration snapshot.
+    sItemScalingConfig->Load(reload);
     if (reload)
     {
-        LOG_WARN("module.ItemScaling", "ItemScaling configuration changes require a server restart.");
-        return;
+        LOG_INFO("module.ItemScaling", "ItemScaling: Operational configuration reloaded successfully.");
     }
-    sItemScalingConfig->Load();
 }
 
 void AddItemScalingWorldScripts()

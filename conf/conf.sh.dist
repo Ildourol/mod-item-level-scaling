@@ -5,6 +5,7 @@
 
 ## BASE SQL
 DB_WORLD_CUSTOM_PATHS+=(
+	$MOD_ITEM_LEVEL_SCALING_ROOT"/data/sql/db-world/base/"
 	$MOD_ITEM_LEVEL_SCALING_ROOT"/sql/world/base/"
 )
 

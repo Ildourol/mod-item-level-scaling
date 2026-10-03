@@ -8,6 +8,7 @@
 #include "ItemScalingCommon.h"
 #include <array>
 #include <vector>
+#include <unordered_set>
 
 constexpr uint8 MAX_BASELINE_LEVEL = 83;
 constexpr uint8 MAX_BASELINE_QUALITY = 8;
@@ -18,7 +19,7 @@ class ItemScalingBaseline
 public:
     static ItemScalingBaseline* instance();
 
-    void BuildBaseline();
+    void BuildBaseline(std::unordered_set<uint32> const* knownSyntheticEntries = nullptr);
 
     [[nodiscard]] double GetMedianItemLevel(uint8 level, uint32 quality, uint8 slotFamily) const;
     [[nodiscard]] uint16 CalculateTargetItemLevel(ItemTemplate const* baseProto, uint8 targetLevel, uint8 originalRefLevel) const;

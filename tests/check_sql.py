@@ -129,30 +129,30 @@ assert '_requestedKeys.insert(key)' in initialize
 assert initialize.index('_requestedKeys.insert(key)') < initialize.index('if (!persisted)')
 assert initialize.index('if (!persisted)') < initialize.index('_keyToEntry.emplace(key, entry)')
 assert 'identity.Matches(*base)' in initialize and 'identity.Matches(*persisted)' in initialize
-assert 'fields[14].IsNull()' not in initialize
+assert 'fields[15].IsNull()' not in initialize
 materialize = function('bool ItemScalingRegistry::MaterializePendingRequests()',
                        'void ItemScalingRegistry::OnLoadCustomDatabaseTable()')
 for guard in ['key.generatorRevision != ITEM_SCALING_GENERATOR_REVISION',
               'key.formulaVersion != sItemScalingConfig->FormulaVersion',
-              'fields[13].Get<uint8>() != uint8(sItemScalingConfig->PreserveNonZeroStats)']:
+              'fields[14].Get<uint8>() != uint8(sItemScalingConfig->PreserveNonZeroStats)']:
     assert materialize.index(guard) < materialize.index('CreateScaledTemplate')
 miss_path = source[source.index('uint32 ItemScalingRegistry::FindOrRequestVariant'):]
 assert not any(blocking in miss_path for blocking in ['WorldDatabase.Query', 'DirectExecute', 'CreateScaledTemplate'])
 
 stat_pairs = [value for i in range(10) for value in (3 + i, 20 + i)]
 identity = [4, 4, -1, -1, 12345, 14, 1]
-values = [60000, 4, 4, -1, 12345, 14, 150, 50, *stat_pairs, 25.0, 50.0, 0.0, 0.0,
-          100, 11, 12, 13, 14, 15, 16, -1, 1, 77, 100]
+values = [60000, 4, 4, -1, 'name', 12345, 14, 150, 50, *stat_pairs, 25.0, 50.0, 0.0, 0.0,
+          100, 11, 12, 13, 14, 15, 16, -1, 1, 0, 0, 77, 100]
 assert insert.count('{}') == len(values)
 clone = insert.format(*values)
 def mapping(entry, required=50, formula=1, revision=1):
-    return variant.format(entry, 100, 53, 150, formula, revision, required, *identity, 1, entry)
+    return variant.format(entry, 100, 53, 150, formula, revision, required, 0, *identity, 1, entry)
 
 def request(required=50, formula=1, revision=1, base=100):
-    return request_insert.format(base, 53, 150, formula, revision, required, *identity, 1)
+    return request_insert.format(base, 53, 150, formula, revision, required, 0, *identity, 1)
 
 def delete_request(required=50, formula=1, revision=1, entry=60000):
-    return completed_delete.format(key_predicate.format(100, 53, 150, formula, revision, required), entry)
+    return completed_delete.format(key_predicate.format(100, 53, 150, formula, revision, required, 0), entry)
 
 key_insert = mapping(60000)
 
@@ -196,14 +196,14 @@ for database in ['fixture', 'assembly']:
     for table, index in [('scaled_item_variant', 'uk_variant_key'), ('scaled_item_variant_request', 'PRIMARY')]:
         check("(SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS "
               f"WHERE TABLE_SCHEMA='{database}' AND TABLE_NAME='{table}' AND INDEX_NAME='{index}' AND NON_UNIQUE=0)="
-              "'base_entry,target_effective_level,target_item_level,formula_version,generator_revision,required_level'")
+              "'base_entry,target_effective_level,target_item_level,formula_version,generator_revision,required_level,random_property_id'")
         check("(SELECT COUNT(*) FROM information_schema.COLUMNS "
               f"WHERE TABLE_SCHEMA='{database}' AND TABLE_NAME='{table}' AND IS_NULLABLE='YES')=0")
         check("(SELECT COUNT(*) FROM information_schema.COLUMNS "
               f"WHERE TABLE_SCHEMA='{database}' AND TABLE_NAME='{table}' "
               "AND COLUMN_NAME IN ('formula_version','generator_revision') AND COLUMN_DEFAULT IS NULL)=2")
 
-# The complete six-field pending primary key collapses repeats across callers/processes.
+# The complete seven-field pending primary key collapses repeats across callers/processes.
 for _ in range(5):
     sql(request())
 check('(SELECT COUNT(*) FROM scaled_item_variant_request)=1')
@@ -212,7 +212,7 @@ sql(request(formula=2))
 sql(request(revision=2))
 check('(SELECT COUNT(*) FROM scaled_item_variant_request)=4')
 check('(SELECT base_sound_override_subclass=-1 AND base_material=-1 AND base_displayid=12345 '
-      'AND preserve_nonzero_stats=1 FROM scaled_item_variant_request WHERE formula_version=1 '
+      'AND random_property_id=0 AND preserve_nonzero_stats=1 FROM scaled_item_variant_request WHERE formula_version=1 '
       'AND generator_revision=1 AND required_level=50)')
 
 sql('START TRANSACTION')
@@ -227,7 +227,7 @@ check("(SELECT name FROM item_template WHERE entry=60000)='Base shield'")
 check('(SELECT class=4 AND subclass=4 AND SoundOverrideSubclass=-1 AND Material=-1 AND displayid=12345 '
       'AND InventoryType=14 AND sheath=1 FROM item_template WHERE entry=60000)')
 check('(SELECT COUNT(*) FROM scaled_item_variant_request)=3')
-check('(SELECT base_displayid=12345 AND base_material=-1 AND preserve_nonzero_stats=1 '
+check('(SELECT base_displayid=12345 AND base_material=-1 AND random_property_id=0 AND preserve_nonzero_stats=1 '
       'FROM scaled_item_variant WHERE variant_entry=60000)')
 # Generating a variant must leave every column of the ordinary source item unchanged.
 item_columns = re.findall(r'^\s*`([^`]+)`', ddl, re.M)
@@ -235,7 +235,7 @@ check('(SELECT COUNT(*) FROM base_before b JOIN item_template i ON b.entry=i.ent
       + ' AND '.join(f'b.`{column}` <=> i.`{column}`' for column in item_columns) + ')=1')
 
 second_values = values.copy()
-second_values[0], second_values[7] = 60001, 53
+second_values[0], second_values[8] = 60001, 53
 sql('START TRANSACTION')
 sql(insert.format(*second_values))
 sql(mapping(60001, required=53))
@@ -250,8 +250,8 @@ missing_values = values.copy()
 missing_values[0], missing_values[-1] = 60004, 999
 sql('START TRANSACTION')
 sql(insert.format(*missing_values))
-sql(variant.format(60004, 999, 53, 150, 1, 1, 50, *identity, 1, 60004))
-sql(completed_delete.format(key_predicate.format(999, 53, 150, 1, 1, 50), 60004))
+sql(variant.format(60004, 999, 53, 150, 1, 1, 50, 0, *identity, 1, 60004))
+sql(completed_delete.format(key_predicate.format(999, 53, 150, 1, 1, 50, 0), 60004))
 sql('COMMIT')
 check('(SELECT COUNT(*) FROM item_template WHERE entry=60004)=0')
 check('(SELECT COUNT(*) FROM scaled_item_variant WHERE variant_entry=60004)=0')
@@ -280,7 +280,7 @@ query_bindings = {
     'SELECT COLUMN_NAME,NON_UNIQUE': [('scaled_item_variant', 'uk_variant_key'),
                                    ('scaled_item_variant_request', 'PRIMARY')],
     'SELECT {},{},preserve_nonzero_stats': [(key_columns, identity_columns, key_columns)],
-    'SELECT variant_entry FROM scaled_item_variant WHERE': [(key_predicate.format(100, 53, 150, 1, 1, 50),)],
+    'SELECT {} FROM scaled_item_variant': [(key_columns,)],
     'SELECT {} FROM item_template': [(base_columns, 100), (base_columns, 999)],
     'SELECT COUNT(*) FROM scaled_item_variant WHERE generator_revision': [(1, 1, 1)],
     'SELECT variant_entry,{},{},preserve_nonzero_stats': [(key_columns, identity_columns)],
@@ -304,7 +304,7 @@ for cpp in sorted((module / 'src').glob('*.cpp')):
 # The same exact-key deletion serves stale and redundant requests. Other demand must survive.
 sql('START TRANSACTION')
 sql(strings(function('std::string DeleteRequest', 'std::string DeleteCompletedRequest'))
-    + key_predicate.format(100, 53, 150, 2, 1, 50))
+    + key_predicate.format(100, 53, 150, 2, 1, 50, 0))
 check('(SELECT COUNT(*) FROM scaled_item_variant_request)=2')
 check('(SELECT COUNT(*) FROM scaled_item_variant_request WHERE generator_revision=2)=1')
 sql('ROLLBACK')
@@ -356,7 +356,7 @@ with tempfile.TemporaryDirectory(prefix='item-scaling-sql-') as directory, sql_e
          'JOIN committed_before b ON s.variant_entry=b.variant_entry WHERE '
          + ' AND '.join(f's.`{column}` <=> b.`{column}`' for column in [
              'base_entry', 'target_effective_level', 'target_item_level', 'formula_version',
-             'generator_revision', 'required_level', 'base_class', 'base_subclass',
+             'generator_revision', 'required_level', 'random_property_id', 'base_class', 'base_subclass',
              'base_sound_override_subclass', 'base_material', 'base_displayid', 'base_inventory_type',
              'base_sheath', 'preserve_nonzero_stats', 'created_at']) + ')=2,1,0))',
          'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM generated_before b '
@@ -370,7 +370,7 @@ with tempfile.TemporaryDirectory(prefix='item-scaling-sql-') as directory, sql_e
         for position in range(8):
             tokens = statement.split('VALUES (' if table.endswith('_request') else 'SELECT ', 1)
             fields = tokens[1].split(',')
-            index = (6 if table.endswith('_request') else 7) + position
+            index = (7 if table.endswith('_request') else 8) + position
             fields[index] = re.sub(r'^-?\d+', 'NULL', fields[index])
             invalid = tokens[0] + ('VALUES (' if table.endswith('_request') else 'SELECT ') + ','.join(fields)
             result = run(['USE fixture', "SET SESSION sql_mode='STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION'", invalid],
@@ -386,7 +386,7 @@ with tempfile.TemporaryDirectory(prefix='item-scaling-sql-') as directory, sql_e
     assert 'Duplicate entry' in result.stderr, result.stderr
     run(['USE fixture', 'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM item_template WHERE entry=60003)=0,1,0))',
          'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM scaled_item_variant_request WHERE '
-         + key_predicate.format(100, 53, 150, 1, 1, 50) + ')=1,1,0))'])
+         + key_predicate.format(100, 53, 150, 1, 1, 50, 0) + ')=1,1,0))'])
     print('PASS: duplicate mapping causes transaction rollback; no orphan template and request retained', flush=True)
     # Missing committed templates are corruption: reserve the mapping, do not create a replacement.
     run(['USE fixture', 'DELETE FROM item_template WHERE entry=60001',

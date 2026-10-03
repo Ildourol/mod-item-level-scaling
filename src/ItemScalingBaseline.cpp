@@ -19,7 +19,7 @@ ItemScalingBaseline* ItemScalingBaseline::instance()
     return &instance;
 }
 
-void ItemScalingBaseline::BuildBaseline()
+void ItemScalingBaseline::BuildBaseline(std::unordered_set<uint32> const* knownSyntheticEntries)
 {
     if (_initialized)
     {
@@ -33,13 +33,18 @@ void ItemScalingBaseline::BuildBaseline()
     std::vector<uint32> buckets[MAX_BASELINE_LEVEL + 1][MAX_BASELINE_QUALITY][MAX_BASELINE_FAMILY];
     uint32 totalProcessed = 0;
     std::unordered_set<uint32> syntheticEntries;
-    QueryResult variants = WorldDatabase.Query("SELECT variant_entry FROM scaled_item_variant");
-    if (variants)
+    std::unordered_set<uint32> const* activeSynthetic = knownSyntheticEntries;
+    if (!activeSynthetic)
     {
-        do
+        QueryResult variants = WorldDatabase.Query("SELECT variant_entry FROM scaled_item_variant");
+        if (variants)
         {
-            syntheticEntries.insert(variants->Fetch()[0].Get<uint32>());
-        } while (variants->NextRow());
+            do
+            {
+                syntheticEntries.insert(variants->Fetch()[0].Get<uint32>());
+            } while (variants->NextRow());
+        }
+        activeSynthetic = &syntheticEntries;
     }
 
     if (useStore)
@@ -48,7 +53,7 @@ void ItemScalingBaseline::BuildBaseline()
         {
             ItemTemplate const& proto = pair.second;
 
-            if (syntheticEntries.count(proto.ItemId))
+            if (activeSynthetic->count(proto.ItemId))
                 continue;
 
             if (proto.Class != ITEM_CLASS_WEAPON && proto.Class != ITEM_CLASS_ARMOR)

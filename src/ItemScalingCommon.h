@@ -27,6 +27,12 @@ enum RequiredLevelPolicy : uint8
     REQ_POLICY_TARGET               = 2
 };
 
+enum class RandomSuffixScalingMode : uint8
+{
+    Skip = 0, // Approach 1 (Default): Exclude random suffix items from scaling
+    Bake = 1  // Approach 2: Scale and bake rolled stats into item_template
+};
+
 // Increment only when generator implementation changes can alter persisted template values.
 // Revision 1 is the initial static demand-ledger generator.
 inline constexpr uint8 ITEM_SCALING_GENERATOR_REVISION = 1;
@@ -39,21 +45,22 @@ struct VariantKey
     uint8  formulaVersion{1};
     uint8  generatorRevision{ITEM_SCALING_GENERATOR_REVISION};
     uint8  requiredLevel{0};
+    int32  randomPropertyId{0};
 
     bool operator<(VariantKey const& o) const
     {
         return std::tie(baseEntry, targetEffectiveLevel, targetItemLevel, formulaVersion, generatorRevision,
-                   requiredLevel) <
+                   requiredLevel, randomPropertyId) <
                std::tie(o.baseEntry, o.targetEffectiveLevel, o.targetItemLevel, o.formulaVersion,
-                   o.generatorRevision, o.requiredLevel);
+                   o.generatorRevision, o.requiredLevel, o.randomPropertyId);
     }
 
     bool operator==(VariantKey const& o) const
     {
         return std::tie(baseEntry, targetEffectiveLevel, targetItemLevel, formulaVersion, generatorRevision,
-                   requiredLevel) ==
+                   requiredLevel, randomPropertyId) ==
                std::tie(o.baseEntry, o.targetEffectiveLevel, o.targetItemLevel, o.formulaVersion,
-                   o.generatorRevision, o.requiredLevel);
+                   o.generatorRevision, o.requiredLevel, o.randomPropertyId);
     }
 };
 
@@ -74,6 +81,7 @@ struct VariantKeyHash
         combine(key.formulaVersion);
         combine(key.generatorRevision);
         combine(key.requiredLevel);
+        combine(key.randomPropertyId);
         return seed;
     }
 };

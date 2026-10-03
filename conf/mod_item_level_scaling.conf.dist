@@ -170,6 +170,29 @@ ItemScaling.ScaleArtifact = 1
 ItemScaling.ScaleHeirloom = 0
 
 #
+#    ItemScaling.RandomSuffix.Mode
+#        Description: Determines how uncommon (green) items with Random Suffixes or Random Properties
+#                     (e.g., "... of the Bear", "... of the Monkey") are handled by the scaling engine.
+#
+#                     In the standard WoW 3.3.5a client, bag tooltips for Random Suffixes on custom synthetic
+#                     item IDs cannot calculate stat points without client-side Item.dbc edits, causing them
+#                     to display "+0" stats.
+#
+#                     0 - Skip / Exclude (Default):
+#                         Items with Random Suffix or Random Property are excluded from scaling and drop at their
+#                         original base level/itemlevel. Bag tooltips display 100% correctly with no "+0" stats.
+#
+#                     1 - Stat Baking:
+#                         Random suffix items scale to the dungeon's level bracket. The rolled stats and suffix name
+#                         are baked directly into the synthetic item_template as fixed stats, setting RandomSuffix = 0.
+#                         Displays scaled stats (+15 Stamina, etc.) in bag tooltips and chat links with NO client patches.
+#
+#        Default:     0
+#
+
+ItemScaling.RandomSuffix.Mode = 0
+
+#
 #    ItemScaling.PreserveNonZeroStats
 #        Description: Prevents non-zero stats from vanishing purely due to rounding to 0 at low levels.
 #                     If an item originally has +5 Haste, scaled version will have at least +1 Haste.

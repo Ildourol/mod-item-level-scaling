@@ -1,0 +1,17 @@
+-- mod-item-level-scaling database integration
+--
+-- This module uses a transactional demand ledger architecture.
+-- Tables:
+--   1. `scaled_item_variant`: stores permanent synthetic item entries and validated template identities.
+--   2. `scaled_item_variant_request`: stores exact gameplay demand requests pending startup materialization.
+--
+-- Requirements:
+--   - InnoDB storage engine is strictly required for transactional atomicity during startup materialization.
+--   - Character encoding utf8mb4 with utf8mb4_unicode_ci collation.
+--   - Synthetic items are materialized into `item_template` transactionally during OnLoadCustomDatabaseTable.
+--
+-- File locations:
+--   - Base schema: data/sql/db-world/base/scaled_item_variant.sql (mirrored at sql/world/base/scaled_item_variant.sql)
+--   - Initial schema update: data/sql/db-world/updates/2026_09_27_00_item_scaling_initial_schema.sql
+--
+-- Keep this file so DB import pipelines and db_assembler can detect module SQL presence and documentation.

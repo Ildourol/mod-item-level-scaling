@@ -24,7 +24,7 @@ public:
 
     // Hits select loaded templates; misses queue exact demand and leave the original loot unchanged.
     [[nodiscard]] uint32 FindOrRequestVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,
-        uint16 targetItemLevel, uint8 formulaVersion, uint8 highestRealPlayerLevel);
+        uint16 targetItemLevel, uint8 formulaVersion, uint8 highestRealPlayerLevel, int32 randomPropertyId = 0);
 
 private:
     bool ValidateSchema();
