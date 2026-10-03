@@ -27,6 +27,7 @@ public:
         uint16 targetItemLevel, uint8 formulaVersion, uint8 highestRealPlayerLevel, int32 randomPropertyId = 0);
 
 private:
+    void EnsureSchema();
     bool ValidateSchema();
     bool ResolveSyntheticEntryRange();
     bool MaterializePendingRequests();

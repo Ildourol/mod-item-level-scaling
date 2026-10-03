@@ -254,6 +254,108 @@ namespace
     }
 }
 
+void ItemScalingRegistry::EnsureSchema()
+{
+    // Idempotently create tables if they do not exist
+    WorldDatabase.DirectExecute(
+        "CREATE TABLE IF NOT EXISTS `scaled_item_variant` ("
+        "  `variant_entry` INT UNSIGNED NOT NULL,"
+        "  `base_entry` INT UNSIGNED NOT NULL,"
+        "  `target_effective_level` TINYINT UNSIGNED NOT NULL,"
+        "  `target_item_level` SMALLINT UNSIGNED NOT NULL,"
+        "  `formula_version` TINYINT UNSIGNED NOT NULL,"
+        "  `generator_revision` TINYINT UNSIGNED NOT NULL,"
+        "  `required_level` TINYINT UNSIGNED NOT NULL,"
+        "  `random_property_id` INT NOT NULL DEFAULT 0,"
+        "  `base_class` TINYINT UNSIGNED NOT NULL,"
+        "  `base_subclass` TINYINT UNSIGNED NOT NULL,"
+        "  `base_sound_override_subclass` TINYINT NOT NULL,"
+        "  `base_material` TINYINT NOT NULL,"
+        "  `base_displayid` INT UNSIGNED NOT NULL,"
+        "  `base_inventory_type` TINYINT UNSIGNED NOT NULL,"
+        "  `base_sheath` TINYINT UNSIGNED NOT NULL,"
+        "  `preserve_nonzero_stats` TINYINT UNSIGNED NOT NULL,"
+        "  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+        "  PRIMARY KEY (`variant_entry`),"
+        "  UNIQUE KEY `uk_variant_key` (`base_entry`, `target_effective_level`, `target_item_level`, `formula_version`, `generator_revision`, `required_level`, `random_property_id`)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
+    );
+
+    WorldDatabase.DirectExecute(
+        "CREATE TABLE IF NOT EXISTS `scaled_item_variant_request` ("
+        "  `base_entry` INT UNSIGNED NOT NULL,"
+        "  `target_effective_level` TINYINT UNSIGNED NOT NULL,"
+        "  `target_item_level` SMALLINT UNSIGNED NOT NULL,"
+        "  `formula_version` TINYINT UNSIGNED NOT NULL,"
+        "  `generator_revision` TINYINT UNSIGNED NOT NULL,"
+        "  `required_level` TINYINT UNSIGNED NOT NULL,"
+        "  `random_property_id` INT NOT NULL DEFAULT 0,"
+        "  `base_class` TINYINT UNSIGNED NOT NULL,"
+        "  `base_subclass` TINYINT UNSIGNED NOT NULL,"
+        "  `base_sound_override_subclass` TINYINT NOT NULL,"
+        "  `base_material` TINYINT NOT NULL,"
+        "  `base_displayid` INT UNSIGNED NOT NULL,"
+        "  `base_inventory_type` TINYINT UNSIGNED NOT NULL,"
+        "  `base_sheath` TINYINT UNSIGNED NOT NULL,"
+        "  `preserve_nonzero_stats` TINYINT UNSIGNED NOT NULL,"
+        "  `requested_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+        "  PRIMARY KEY (`base_entry`, `target_effective_level`, `target_item_level`, `formula_version`, `generator_revision`, `required_level`, `random_property_id`)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
+    );
+
+    // Auto-heal any pre-existing older tables by idempotently ensuring all expected columns exist
+    static char const* const autoMigrations[] = {
+        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `generator_revision` TINYINT UNSIGNED NOT NULL DEFAULT 1 AFTER `formula_version`;",
+        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `required_level` TINYINT UNSIGNED NOT NULL DEFAULT 1 AFTER `generator_revision`;",
+        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `random_property_id` INT NOT NULL DEFAULT 0 AFTER `required_level`;",
+        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `base_class` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `random_property_id`;",
+        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `base_subclass` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_class`;",
+        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `base_sound_override_subclass` TINYINT NOT NULL DEFAULT -1 AFTER `base_subclass`;",
+        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `base_material` TINYINT NOT NULL DEFAULT 0 AFTER `base_sound_override_subclass`;",
+        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `base_displayid` INT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_material`;",
+        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `base_inventory_type` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_displayid`;",
+        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `base_sheath` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_inventory_type`;",
+        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `preserve_nonzero_stats` TINYINT UNSIGNED NOT NULL DEFAULT 1 AFTER `base_sheath`;",
+        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `random_property_id` INT NOT NULL DEFAULT 0 AFTER `required_level`;",
+        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `base_class` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `random_property_id`;",
+        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `base_subclass` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_class`;",
+        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `base_sound_override_subclass` TINYINT NOT NULL DEFAULT -1 AFTER `base_subclass`;",
+        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `base_material` TINYINT NOT NULL DEFAULT 0 AFTER `base_sound_override_subclass`;",
+        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `base_displayid` INT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_material`;",
+        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `base_inventory_type` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_displayid`;",
+        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `base_sheath` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_inventory_type`;",
+        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `preserve_nonzero_stats` TINYINT UNSIGNED NOT NULL DEFAULT 1 AFTER `base_sheath`;"
+    };
+
+    for (char const* sql : autoMigrations)
+        WorldDatabase.DirectExecute(sql);
+
+    // Auto-heal composite keys if upgrading from a legacy schema without random_property_id
+    QueryResult uk = WorldDatabase.Query(
+        "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() "
+        "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key' AND COLUMN_NAME='random_property_id'");
+    if (uk && uk->Fetch()[0].Get<uint64>() == 0)
+    {
+        WorldDatabase.DirectExecute("ALTER TABLE `scaled_item_variant` DROP KEY IF EXISTS `uk_variant_key`;");
+        WorldDatabase.DirectExecute(
+            "ALTER TABLE `scaled_item_variant` ADD UNIQUE KEY `uk_variant_key` ("
+            "`base_entry`,`target_effective_level`,`target_item_level`,`formula_version`,`generator_revision`,`required_level`,`random_property_id`);"
+        );
+    }
+
+    QueryResult pk = WorldDatabase.Query(
+        "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() "
+        "AND TABLE_NAME='scaled_item_variant_request' AND INDEX_NAME='PRIMARY' AND COLUMN_NAME='random_property_id'");
+    if (pk && pk->Fetch()[0].Get<uint64>() == 0)
+    {
+        WorldDatabase.DirectExecute("ALTER TABLE `scaled_item_variant_request` DROP PRIMARY KEY;");
+        WorldDatabase.DirectExecute(
+            "ALTER TABLE `scaled_item_variant_request` ADD PRIMARY KEY ("
+            "`base_entry`,`target_effective_level`,`target_item_level`,`formula_version`,`generator_revision`,`required_level`,`random_property_id`);"
+        );
+    }
+}
+
 bool ItemScalingRegistry::ValidateSchema()
 {
     struct ColumnType
@@ -522,6 +624,7 @@ void ItemScalingRegistry::OnLoadCustomDatabaseTable()
 {
     if (_dbSynchronized)
         return;
+    EnsureSchema();
     if (!ValidateSchema() || !ResolveSyntheticEntryRange() ||
         !ItemScalingFormula::LoadStartupCurves(sWorld->GetDataPath()))
     {
