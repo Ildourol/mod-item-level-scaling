@@ -22,7 +22,7 @@ public:
     // Validate and index core-loaded templates before gameplay can select variants.
     void Initialize();
 
-    // Hits select loaded templates; misses queue exact demand and leave the original loot unchanged.
+    // Hits select immutable templates; misses enqueue live generation or legacy startup demand.
     [[nodiscard]] uint32 FindOrRequestVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,
         uint16 targetItemLevel, uint8 formulaVersion, uint8 highestRealPlayerLevel, int32 randomPropertyId = 0);
 

@@ -59,6 +59,15 @@ public:
     uint8 BracketStep{1};
     uint8 FormulaVersion{1};
 
+    // Startup-only: live templates use slots already loaded by ObjectMgr.
+    bool LiveEnable{true};
+    uint8 LiveGenerationMode{1};
+    uint32 LiveReservedSlots{4096};
+    uint32 LiveMaxPendingVariants{4096};
+    uint32 LiveMaxPublishPerTick{64};
+    uint32 LiveLootWaitTimeoutMs{10000};
+    uint32 Revision{0};
+
     std::unordered_set<uint8> ExcludedLevels;
     std::unordered_set<uint32> ExcludedMapIds;
     std::unordered_set<uint32> ExcludedItemIds;

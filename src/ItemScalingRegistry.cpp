@@ -10,10 +10,12 @@
 #include "ItemScalingConfig.h"
 #include "ItemScalingFormula.h"
 #include "ItemScalingIdentity.h"
+#include "ItemScalingLive.h"
 #include "Log.h"
 #include "ObjectMgr.h"
 #include "StringFormat.h"
 #include "World.h"
+#include <set>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -303,55 +305,74 @@ void ItemScalingRegistry::EnsureSchema()
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
     );
 
-    // Auto-heal any pre-existing older tables by idempotently ensuring all expected columns exist
-    static char const* const autoMigrations[] = {
-        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `generator_revision` TINYINT UNSIGNED NOT NULL DEFAULT 1 AFTER `formula_version`;",
-        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `required_level` TINYINT UNSIGNED NOT NULL DEFAULT 1 AFTER `generator_revision`;",
-        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `random_property_id` INT NOT NULL DEFAULT 0 AFTER `required_level`;",
-        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `base_class` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `random_property_id`;",
-        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `base_subclass` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_class`;",
-        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `base_sound_override_subclass` TINYINT NOT NULL DEFAULT -1 AFTER `base_subclass`;",
-        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `base_material` TINYINT NOT NULL DEFAULT 0 AFTER `base_sound_override_subclass`;",
-        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `base_displayid` INT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_material`;",
-        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `base_inventory_type` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_displayid`;",
-        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `base_sheath` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_inventory_type`;",
-        "ALTER TABLE `scaled_item_variant` ADD COLUMN IF NOT EXISTS `preserve_nonzero_stats` TINYINT UNSIGNED NOT NULL DEFAULT 1 AFTER `base_sheath`;",
-        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `random_property_id` INT NOT NULL DEFAULT 0 AFTER `required_level`;",
-        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `base_class` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `random_property_id`;",
-        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `base_subclass` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_class`;",
-        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `base_sound_override_subclass` TINYINT NOT NULL DEFAULT -1 AFTER `base_subclass`;",
-        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `base_material` TINYINT NOT NULL DEFAULT 0 AFTER `base_sound_override_subclass`;",
-        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `base_displayid` INT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_material`;",
-        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `base_inventory_type` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_displayid`;",
-        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `base_sheath` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_inventory_type`;",
-        "ALTER TABLE `scaled_item_variant_request` ADD COLUMN IF NOT EXISTS `preserve_nonzero_stats` TINYINT UNSIGNED NOT NULL DEFAULT 1 AFTER `base_sheath`;"
-    };
-
-    for (char const* sql : autoMigrations)
-        WorldDatabase.DirectExecute(sql);
-
-    // Auto-heal composite keys if upgrading from a legacy schema without random_property_id
-    QueryResult uk = WorldDatabase.Query(
-        "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() "
-        "AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key' AND COLUMN_NAME='random_property_id'");
-    if (uk && uk->Fetch()[0].Get<uint64>() == 0)
+    // MySQL does not support ADD COLUMN IF NOT EXISTS. Inspect once during startup,
+    // then apply only missing columns with portable ALTER syntax.
+    QueryResult columns = WorldDatabase.Query(
+        "SELECT TABLE_NAME,COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() "
+        "AND TABLE_NAME IN ('scaled_item_variant','scaled_item_variant_request')");
+    if (!columns)
+        return;
+    std::set<std::pair<std::string, std::string>> present;
+    do
     {
-        WorldDatabase.DirectExecute("ALTER TABLE `scaled_item_variant` DROP KEY IF EXISTS `uk_variant_key`;");
+        Field* fields = columns->Fetch();
+        present.emplace(fields[0].Get<std::string>(), fields[1].Get<std::string>());
+    } while (columns->NextRow());
+    struct Migration
+    {
+        char const* table;
+        char const* column;
+        char const* sql;
+    };
+    static Migration const migrations[] = {
+        {"scaled_item_variant", "generator_revision", "ALTER TABLE `scaled_item_variant` ADD COLUMN `generator_revision` TINYINT UNSIGNED NOT NULL DEFAULT 1 AFTER `formula_version`;"},
+        {"scaled_item_variant", "required_level", "ALTER TABLE `scaled_item_variant` ADD COLUMN `required_level` TINYINT UNSIGNED NOT NULL DEFAULT 1 AFTER `generator_revision`;"},
+        {"scaled_item_variant", "random_property_id", "ALTER TABLE `scaled_item_variant` ADD COLUMN `random_property_id` INT NOT NULL DEFAULT 0 AFTER `required_level`;"},
+        {"scaled_item_variant", "base_class", "ALTER TABLE `scaled_item_variant` ADD COLUMN `base_class` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `random_property_id`;"},
+        {"scaled_item_variant", "base_subclass", "ALTER TABLE `scaled_item_variant` ADD COLUMN `base_subclass` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_class`;"},
+        {"scaled_item_variant", "base_sound_override_subclass", "ALTER TABLE `scaled_item_variant` ADD COLUMN `base_sound_override_subclass` TINYINT NOT NULL DEFAULT -1 AFTER `base_subclass`;"},
+        {"scaled_item_variant", "base_material", "ALTER TABLE `scaled_item_variant` ADD COLUMN `base_material` TINYINT NOT NULL DEFAULT 0 AFTER `base_sound_override_subclass`;"},
+        {"scaled_item_variant", "base_displayid", "ALTER TABLE `scaled_item_variant` ADD COLUMN `base_displayid` INT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_material`;"},
+        {"scaled_item_variant", "base_inventory_type", "ALTER TABLE `scaled_item_variant` ADD COLUMN `base_inventory_type` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_displayid`;"},
+        {"scaled_item_variant", "base_sheath", "ALTER TABLE `scaled_item_variant` ADD COLUMN `base_sheath` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_inventory_type`;"},
+        {"scaled_item_variant", "preserve_nonzero_stats", "ALTER TABLE `scaled_item_variant` ADD COLUMN `preserve_nonzero_stats` TINYINT UNSIGNED NOT NULL DEFAULT 1 AFTER `base_sheath`;"},
+        {"scaled_item_variant_request", "random_property_id", "ALTER TABLE `scaled_item_variant_request` ADD COLUMN `random_property_id` INT NOT NULL DEFAULT 0 AFTER `required_level`;"},
+        {"scaled_item_variant_request", "base_class", "ALTER TABLE `scaled_item_variant_request` ADD COLUMN `base_class` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `random_property_id`;"},
+        {"scaled_item_variant_request", "base_subclass", "ALTER TABLE `scaled_item_variant_request` ADD COLUMN `base_subclass` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_class`;"},
+        {"scaled_item_variant_request", "base_sound_override_subclass", "ALTER TABLE `scaled_item_variant_request` ADD COLUMN `base_sound_override_subclass` TINYINT NOT NULL DEFAULT -1 AFTER `base_subclass`;"},
+        {"scaled_item_variant_request", "base_material", "ALTER TABLE `scaled_item_variant_request` ADD COLUMN `base_material` TINYINT NOT NULL DEFAULT 0 AFTER `base_sound_override_subclass`;"},
+        {"scaled_item_variant_request", "base_displayid", "ALTER TABLE `scaled_item_variant_request` ADD COLUMN `base_displayid` INT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_material`;"},
+        {"scaled_item_variant_request", "base_inventory_type", "ALTER TABLE `scaled_item_variant_request` ADD COLUMN `base_inventory_type` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_displayid`;"},
+        {"scaled_item_variant_request", "base_sheath", "ALTER TABLE `scaled_item_variant_request` ADD COLUMN `base_sheath` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `base_inventory_type`;"},
+        {"scaled_item_variant_request", "preserve_nonzero_stats", "ALTER TABLE `scaled_item_variant_request` ADD COLUMN `preserve_nonzero_stats` TINYINT UNSIGNED NOT NULL DEFAULT 1 AFTER `base_sheath`;"},
+    };
+    for (auto const& migration : migrations)
+        if (!present.count({migration.table, migration.column}))
+            WorldDatabase.DirectExecute(migration.sql);
+
+    QueryResult uk = WorldDatabase.Query(
+        "SELECT COUNT(*),COALESCE(SUM(COLUMN_NAME='random_property_id'),0) FROM information_schema.STATISTICS "
+        "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='scaled_item_variant' AND INDEX_NAME='uk_variant_key'");
+    if (uk && uk->Fetch()[1].Get<uint64>() == 0)
+    {
+        if (uk->Fetch()[0].Get<uint64>() != 0)
+            WorldDatabase.DirectExecute("ALTER TABLE `scaled_item_variant` DROP KEY `uk_variant_key`");
         WorldDatabase.DirectExecute(
             "ALTER TABLE `scaled_item_variant` ADD UNIQUE KEY `uk_variant_key` ("
-            "`base_entry`,`target_effective_level`,`target_item_level`,`formula_version`,`generator_revision`,`required_level`,`random_property_id`);"
+            "`base_entry`,`target_effective_level`,`target_item_level`,`formula_version`,`generator_revision`,`required_level`,`random_property_id`)"
         );
     }
 
     QueryResult pk = WorldDatabase.Query(
-        "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() "
-        "AND TABLE_NAME='scaled_item_variant_request' AND INDEX_NAME='PRIMARY' AND COLUMN_NAME='random_property_id'");
-    if (pk && pk->Fetch()[0].Get<uint64>() == 0)
+        "SELECT COUNT(*),COALESCE(SUM(COLUMN_NAME='random_property_id'),0) FROM information_schema.STATISTICS "
+        "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='scaled_item_variant_request' AND INDEX_NAME='PRIMARY'");
+    if (pk && pk->Fetch()[1].Get<uint64>() == 0)
     {
-        WorldDatabase.DirectExecute("ALTER TABLE `scaled_item_variant_request` DROP PRIMARY KEY;");
+        if (pk->Fetch()[0].Get<uint64>() != 0)
+            WorldDatabase.DirectExecute("ALTER TABLE `scaled_item_variant_request` DROP PRIMARY KEY");
         WorldDatabase.DirectExecute(
             "ALTER TABLE `scaled_item_variant_request` ADD PRIMARY KEY ("
-            "`base_entry`,`target_effective_level`,`target_item_level`,`formula_version`,`generator_revision`,`required_level`,`random_property_id`);"
+            "`base_entry`,`target_effective_level`,`target_item_level`,`formula_version`,`generator_revision`,`required_level`,`random_property_id`)"
         );
     }
 }
@@ -599,6 +620,11 @@ bool ItemScalingRegistry::MaterializePendingRequests()
             key.targetEffectiveLevel, key.targetItemLevel, key.formulaVersion, key.requiredLevel, key.randomPropertyId);
         scaled.RequiredLevel = key.requiredLevel;
         identity.Apply(scaled);
+        if (!ItemScalingFormula::IsValidBakedTemplate(base, scaled, key.randomPropertyId))
+        {
+            ++deferred;
+            continue;
+        }
         transaction->Append(BuildItemTemplateInsertSQL(scaled, key.baseEntry));
         transaction->Append(VariantInsert(entry, key, identity));
         transaction->Append(DeleteCompletedRequest(key, entry));
@@ -625,7 +651,26 @@ void ItemScalingRegistry::OnLoadCustomDatabaseTable()
     if (_dbSynchronized)
         return;
     EnsureSchema();
-    if (!ValidateSchema() || !ResolveSyntheticEntryRange() ||
+    bool validSchema = ValidateSchema();
+    if (!sItemScalingLive->RecoverStagedTemplates())
+    {
+        LOG_ERROR("module.ItemScaling", "Live snapshot recovery failed; stopping startup to protect issued items.");
+        World::StopNow(ERROR_EXIT_CODE);
+        return;
+    }
+    if (!validSchema)
+        return;
+    if (!sItemScalingConfig->Enable)
+    {
+        // Recovery still runs when disabled so existing character items remain valid.
+        if (!sItemScalingLive->ReserveSlots())
+        {
+            LOG_ERROR("module.ItemScaling", "Live slot ownership failed validation; stopping startup.");
+            World::StopNow(ERROR_EXIT_CODE);
+        }
+        return;
+    }
+    if (!ResolveSyntheticEntryRange() ||
         !ItemScalingFormula::LoadStartupCurves(sWorld->GetDataPath()))
     {
         LOG_ERROR("module.ItemScaling", "Startup prerequisites failed; item scaling disabled for this run.");
@@ -646,6 +691,12 @@ void ItemScalingRegistry::OnLoadCustomDatabaseTable()
         LOG_WARN("module.ItemScaling", "PreserveNonZeroStats conflicts with the committed FormulaVersion family. "
             "Increment FormulaVersion before generating new variants; existing issued items remain available.");
     _dbSynchronized = MaterializePendingRequests();
+    if (_dbSynchronized && !sItemScalingLive->ReserveSlots())
+    {
+        LOG_ERROR("module.ItemScaling", "Could not reserve live slots; stopping startup before player login.");
+        _dbSynchronized = false;
+        World::StopNow(ERROR_EXIT_CODE);
+    }
 }
 
 void ItemScalingRegistry::Initialize()
@@ -704,7 +755,7 @@ void ItemScalingRegistry::Initialize()
                 ++invalid;
                 continue;
             }
-            if (!ItemScalingIdentity::CompatibleLootMetadata(*base, *persisted))
+            if (!ItemScalingIdentity::CompatibleLootMetadata(*base, *persisted, key.randomPropertyId != 0))
             {
                 ++incompatible;
                 continue;
@@ -719,6 +770,7 @@ void ItemScalingRegistry::Initialize()
         } while (result->NextRow());
     }
     // Build statistical baseline from in-memory ItemTemplateStore, bypassing SQL table scan
+    sItemScalingLive->IncludeOwnedEntries(_syntheticEntries);
     sItemScalingBaseline->BuildBaseline(&_syntheticEntries);
     // Publish immutable lookup tables only after all startup writes to them have finished.
     _initialized.store(true, std::memory_order_release);
@@ -744,7 +796,7 @@ uint32 ItemScalingRegistry::FindExistingVariant(ItemTemplate const* baseProto, u
     auto it = _keyToEntry.find(key);
     if (it != _keyToEntry.end())
         return it->second;
-    return 0;
+    return sItemScalingLive->Find(key);
 }
 
 uint32 ItemScalingRegistry::FindOrRequestVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,
@@ -758,6 +810,18 @@ uint32 ItemScalingRegistry::FindOrRequestVariant(ItemTemplate const* baseProto, 
     auto it = _keyToEntry.find(key);
     if (it != _keyToEntry.end())
         return it->second;
+    if (_familyCompatible && sItemScalingConfig->LiveEnable && ValidKey(key) &&
+        ItemScalingIdentity::CanCapture(*baseProto))
+    {
+        // A committed but invalid key remains reserved. Never stage another ID for
+        // it: that would collide with its permanent unique key during recovery.
+        {
+            std::lock_guard<std::mutex> lock(_requestMutex);
+            if (_requestedKeys.count(key))
+                return 0;
+        }
+        return sItemScalingLive->FindOrRequest(*baseProto, key, highestRealPlayerLevel);
+    }
     if (_familyCompatible && sItemScalingConfig->DemandLedgerEnable && ValidKey(key) &&
         ItemScalingIdentity::CanCapture(*baseProto))
         QueueVariantRequest(key, *baseProto);

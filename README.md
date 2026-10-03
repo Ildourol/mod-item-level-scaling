@@ -2,139 +2,103 @@
 
 ![Item Level Scaling](docs/images/item_scaling_banner.png)
 
-Scale eligible dungeon and raid equipment dynamically or to fixed target levels matching the player/party level in AzerothCore 3.3.5a.
+Scale eligible dungeon and raid equipment to the player or party level in AzerothCore 3.3.5a. The hybrid live path prepares new variants during the first visit, saves them asynchronously, and exposes the complete stats through native item queries. No core, Playerbots, client, or DBC changes are required.
 
-This module uses a **Demand Ledger Architecture** with permanent, static item templates. It requires **no AzerothCore core patch, no Playerbots patch, no client patch, no custom client Item.dbc, and no runtime item template publication**.
+## First-run behavior
 
----
+`ItemScaling.Live.Enable = 1` enables live generation. Choose when preparation starts:
 
-## Features
+| GenerationMode | Behavior |
+|---|---|
+| `1` (default) | Prepare eligible equipment when players enter a dungeon. Preparation refreshes when the highest eligible player level or operational configuration changes. |
+| `2` | Prepare only equipment requested by actual rolled loot. |
 
-- **Dynamic & Fixed Level Scaling**: Scales equipment dropped in dungeons and raids to match the player or party level.
-- **Demand-Ledger Architecture**: Scaled item templates are requested on-demand during live gameplay via non-blocking asynchronous MySQL operations and materialized into permanent `item_template` records upon the next server startup.
-- **Dual-Approach Random Suffix Handling**:
-  - **Mode 0 (Default - Skip)**: Items with random properties/suffixes (e.g. *"... of the Bear"*) drop as their original base version, completely avoiding the standard 3.3.5a client tooltip `+0` stat bug without client patches. Fixed-stat greens and all rare/epic gear scale normally.
-  - **Mode 1 (Server-Side Stat Baking)**: Scales random suffix gear to the dungeon's level bracket, calculates stat points directly from `RandPropPoints.dbc`, and bakes the stats and suffix into `item_template` as fixed stats (`RandomSuffix = 0, RandomProperty = 0`). Gives full scaled stats in bag tooltips and chat links with zero client edits.
-- **High Performance & Zero Startup Lag**:
-  - **In-Memory Baseline Generation**: Calculates item baselines directly from `sObjectMgr->GetItemTemplateStore()` in RAM, eliminating the startup table scan of `item_template`.
-  - **Junk Creature Filtering**: Skips critters, totems, pets, and temporary summons before triggering scaling logic or enqueuing demand.
-  - **Startup Base Template Cache**: Caches base templates in RAM during demand materialization, querying MySQL once per base item across all level brackets.
-  - **Bulk Deduplication & Batched Deletions**: Deletes redundant and stale demand in transactions batched at 250 rows.
-  - **Live Configuration Reload**: Operational settings (`Enable`, `BracketStep`, `ScaleDungeons`, `ScaleRaids`, etc.) can be modified live via `.reload config` without restarting the server.
-- **Playerbots & Economy Safe**: Fully compatible with `mod-playerbots`, autogear, AH, guild banks, and mail. Permanent item IDs ensure item validity across restarts.
+Both modes hold an unexpected first-time loot request briefly until its complete snapshot is committed and its reserved RAM template is ready. The same rolled item, count, ownership and slot are retained. Ready variants are used immediately. Successful generation requires no second dungeon run or intervening restart.
 
----
+SQL failure, timeout, exhausted slots or queue saturation leave the original rolled item available. `.itemscaling status` reports the active mode, available slots, pending/durable/ready variants, and failure count. Unsupported equipment and excluded sources retain their original behavior.
 
-## Architecture Overview
-
-```mermaid
-flowchart TD
-    subgraph Live Gameplay Drop Path
-        K[Creature Killed / Chest Looted] --> S{IsValidDropSource?}
-        S -- Critter / Totem / Pet / Summon --> X[Skip: Zero CPU & Zero SQL]
-        S -- Valid Dungeon Mob --> P[Determine Target Level]
-        P --> V{Variant Cached in RAM?}
-        V -- Yes --> R[Drop Permanent Scaled Item]
-        V -- No --> Q[Asynchronous Non-Blocking INSERT IGNORE]
-        Q --> B[Drop Base Unscaled Item]
-    end
-
-    subgraph Startup Demand Materialization
-        M[Read Pending Requests] --> S1{In existingVariantKeys?}
-        S1 -- Yes --> B1[Batch Deletion in Transaction]
-        S1 -- No --> S2{Stale / Incompatible Key?}
-        S2 -- Yes --> B1
-        S2 -- No --> BC{Base in baseCache?}
-        BC -- Hit --> U[Reuse Template from RAM]
-        BC -- Miss --> DB[Query MySQL item_template Once & Cache in RAM]
-        U --> T[Append to Transaction Batch]
-        DB --> T
-        T --> C[Commit Batch Every 250 Rows]
-    end
-```
-
----
-
-## Installation
-
-1. Clone the repository into your AzerothCore `modules/` directory:
-   ```bash
-   cd /path/to/azerothcore/modules
-   git clone https://github.com/Ildourol/mod-item-level-scaling.git
-   ```
-
-2. Re-run CMake and compile your `worldserver`.
-
-3. Copy the configuration file to your worldserver configuration directory:
-   ```bash
-   cp modules/mod-item-level-scaling/conf/mod_item_level_scaling.conf.dist /path/to/server/etc/mod_item_level_scaling.conf
-   ```
-
-4. Database tables will automatically be created by AzerothCore's `DBUpdater` using:
-   - `data/sql/db-world/base/scaled_item_variant.sql`
-   - `data/sql/db-world/updates/2026_09_27_00_item_scaling_initial_schema.sql`
-
----
+Set `ItemScaling.Live.Enable = 0` to use the legacy demand ledger: unseen variants remain original until the next startup materializes their requests. Already issued variants remain valid in either mode.
 
 ## Configuration
 
-Settings are documented in [`conf/mod_item_level_scaling.conf.dist`](conf/mod_item_level_scaling.conf.dist):
+See [the configuration template](conf/mod_item_level_scaling.conf.dist) for all options.
 
 ```ini
-# Enable or disable the module
 ItemScaling.Enable = 1
+ItemScaling.LevelScaling.Method = "dynamic"
 
-# Scaling method: "dynamic" (scales to highest real player) or "fixed" (scales to MaxLevel)
-ItemScaling.Method = "dynamic"
+ItemScaling.Live.Enable = 1
+# 1 = dungeon entry; 2 = actual rolled drop
+ItemScaling.Live.GenerationMode = 1
+ItemScaling.Live.ReservedSlots = 4096
+ItemScaling.Live.MaxPendingVariants = 4096
+ItemScaling.Live.MaxPublishPerTick = 64
+ItemScaling.Live.LootWaitTimeoutMs = 10000
 
-# Demand Ledger: Record requests and materialize permanent item templates
-ItemScaling.DemandLedger.Enable = 1
-
-# Handling of Random Suffix / Property gear (e.g. "... of the Bear")
-# 0 - (Default) Skip scaling for random suffix gear to ensure 100% native client tooltips
-# 1 - Stat Baking: Scale and bake stats directly into item_template (bypasses client Item.dbc)
+# 0 = retain original random-property/suffix gear (default)
+# 1 = bake supported rolled bonuses into fixed template stats
 ItemScaling.RandomSuffix.Mode = 0
 
-# Instance types to scale
+# Used for new requests when Live.Enable=0
+ItemScaling.DemandLedger.Enable = 1
 ItemScaling.ScaleDungeons = 1
-ItemScaling.ScaleRaids = 0
-ItemScaling.ScaleHeroics = 0
-
-# Directional scaling
-ItemScaling.ScaleUp = 1
-ItemScaling.ScaleDown = 1
-
-# Level bracketing (1 = exact level, 5 = bracket every 5 levels)
+ItemScaling.ScaleRaids = 1
+ItemScaling.ScaleHeroics = 1
+ItemScaling.ScaleChests = 1
 ItemScaling.BracketStep = 1
-
-# Rarity filters
-ItemScaling.ScalePoor = 1
-ItemScaling.ScaleCommon = 1
-ItemScaling.ScaleUncommon = 1
-ItemScaling.ScaleRare = 1
-ItemScaling.ScaleEpic = 1
-ItemScaling.ScaleLegendary = 1
-ItemScaling.ScaleArtifact = 1
-ItemScaling.ScaleHeirloom = 0
 ```
 
----
+`Live.*`, formula version, random mode, and persistence invariants are startup settings. `.reload config` retains their active values and logs when a requested change needs a restart. Existing operational filters remain reloadable. AutoBalance integration can override the effective scaling method and dynamic limits.
 
-## Complete Persisted State
+## RAM templates and persistence
 
-The module maintains three InnoDB tables:
-- **`scaled_item_variant`**: Permanent synthetic item mappings. Contains the unique 7-field key (`base_entry`, `target_effective_level`, `target_item_level`, `formula_version`, `generator_revision`, `required_level`, `random_property_id`), 7 non-null validated base-identity fields (`class`, `subclass`, `sound_override_subclass`, `material`, `displayid`, `inventory_type`, `sheath`), and `preserve_nonzero_stats`.
-- **`scaled_item_variant_request`**: Demand ledger capturing gameplay requests asynchronously with the composite 7-field primary key.
-- **`item_template`**: Real scaled stats, damage, armor, block, resistances, and levels cloned from the base item with scaled numerical values.
+Before core item loading, the module recovers previously staged snapshots and reserves the configured number of unused templates in `item_template`. These rows are inert placeholders, excluded from statistical baselines and blocked from client item-query responses. Startup does not generate all dungeon variants.
 
----
+Gameplay requests copy the base template into a synchronized module queue. A bounded world update generates the variant and submits one asynchronous transaction containing its complete snapshot, seven-field key, identity metadata and slot assignment. Only a successful commit acknowledgement permits publication.
 
-## Loot Safety and Playerbots Compatibility
+At `WorldScript::OnUpdate`, after the core joins map workers, the module populates an existing reserved template object in place. It keeps both core lookup containers and their pointers stable. Published templates are immutable, use unique permanent IDs, and are never reassigned.
 
-- **Quest & Unique Protection**: Quest-required items, items with `MaxCount != 0`, unique-equipped items, quest starters, scripted equipment, and disabled entries are never altered.
-- **Playerbots Integration**: Playerbots reads ordinary static `ItemTemplate` stats, levels, damage, armor, and inherited metadata. `StatsCollector`, `StatsWeightCalculator`, `ItemUsageValue`, `LootRollAction`, and `EquipAction` interact with scaled items natively without special casing or hooks.
+At the next startup, the saved snapshot replaces its owned SQL placeholder and gains a permanent mapping in one transaction. The original ID and values survive; the module does not recalculate issued items from a changed base or configuration. Recovery runs even when scaling is disabled. Incomplete staging, an ownership collision, nontransactional tables or an incompatible staging schema stop startup before player login.
 
----
+The world database contains:
+
+| Table | Purpose |
+|---|---|
+| `item_template` | Ordinary permanent variants and unused live placeholders |
+| `scaled_item_variant` | Permanent variant keys and validated base identities |
+| `scaled_item_variant_request` | Legacy requests awaiting startup materialization |
+| `mod_item_level_scaling_slot` | Reserved IDs and durable assignment state |
+| `mod_item_level_scaling_staged_item` | Complete saved RAM-template snapshots |
+| `mod_item_level_scaling_staged_variant` | Keys and metadata awaiting promotion |
+
+Keep these tables together in backups. Run one worldserver against a given world database; the live slot pool is owned by that worldserver.
+
+## Bags, tooltips and random gear
+
+Native `CMSG_ITEM_QUERY_SINGLE` responses read the same complete template used for gameplay: stats, damage, armor, resistances, block, item level, required level and inherited metadata. Pending placeholder responses are suppressed; deferred queries resume after publication. Zero-valued stat rows are compacted to match the core loader after restart.
+
+Random-property/suffix scaling stays **off by default**. With `ItemScaling.RandomSuffix.Mode = 1`, the actual rolled property becomes part of the variant key. Supported stat and resistance bonuses and the rolled name are baked into fixed fields. Both template random fields and awarded instance random fields are cleared. Unsupported effects, missing DBC data, overflow or too many stats retain the original item rather than losing bonuses.
+
+The packet and template paths are implemented for native bag, equipped and linked tooltips. Client rendering and actual equipped bonuses still require in-game verification; source and SQL checks cannot prove the UI result.
+
+## Loot safety and Playerbots
+
+Quest loot, quest starters, entry-based uniqueness, scripted equipment, native scaling distributions, disabled items and configured exclusions remain protected. Critters, totems, pets and temporary summons are excluded from actual creature loot scaling.
+
+Creature loot packets wait before native group rolls start. The ordinary chest adapter runs after successful native open-lock validation, preserves the original contents and group-loot setup, and resumes after publication. Scripted chests and chests with a custom AI retain their native flow; their on-drop requests can prepare variants for later drops, but their first opening is outside the ordinary chest adapter's guarantee.
+
+Playerbots' queued creature-loot packets use the same gate. Live valuation, Need/Greed and equip actions read ordinary templates. Playerbots' startup-built autogear catalogues gain new permanent variants on the next restart; the module does not rebuild or change Playerbots internals.
+
+## Installation
+
+1. Place this module in AzerothCore's `modules` directory.
+2. Reconfigure and build worldserver when you are ready to deploy.
+3. Copy `conf/mod_item_level_scaling.conf.dist` to the active module configuration location and choose the generation mode.
+4. Let the module SQL updater apply [the initial schema](data/sql/db-world/updates/2026_09_27_00_item_scaling_initial_schema.sql) and [the live staging migration](data/sql/db-world/updates/2026_10_04_00_item_scaling_live.sql). Runtime startup also creates missing module tables idempotently.
+
+Both schema installation routes define the same tables; legacy upgrades use `information_schema` guards compatible with Oracle MySQL. InnoDB is required for atomic staging and promotion.
+
+The implementation task did not compile, install, restart worldserver or apply migrations to the live databases. See [verification instructions](tests/README.md), [architecture](docs/ARCHITECTURE.md), and [the implementation record](docs/ISSUES.md#mils-004).
 
 ## License
 

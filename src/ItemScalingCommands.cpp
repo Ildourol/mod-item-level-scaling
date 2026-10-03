@@ -10,6 +10,7 @@
 #include "ItemScalingConfig.h"
 #include "ItemScalingFormula.h"
 #include "ItemScalingRegistry.h"
+#include "ItemScalingLive.h"
 #include "ItemScalingSafety.h"
 #include "ItemTemplate.h"
 #include "Player.h"
@@ -100,12 +101,17 @@ public:
         handler->PSendSysMessage("Directional Scaling: ScaleUp={}, ScaleDown={}", sItemScalingConfig->ScaleUp ? "Yes" : "No", sItemScalingConfig->ScaleDown ? "Yes" : "No");
         handler->PSendSysMessage("RealPlayersOnly: {}, IncludeGameMasters: {}", sItemScalingConfig->RealPlayersOnly ? "Yes" : "No", sItemScalingConfig->IncludeGameMasters ? "Yes" : "No");
         handler->PSendSysMessage("RequiredLevel Policy: {}", GetPolicyName(sItemScalingConfig->ReqLevelPolicy));
-        handler->PSendSysMessage("RandomSuffix Mode: {} (0=Skip, 1=Scale, 2=NativeOnly)", static_cast<uint32>(sItemScalingConfig->RandomSuffixMode));
+        handler->PSendSysMessage("RandomSuffix Mode: {} (0=Skip, 1=Bake)", static_cast<uint32>(sItemScalingConfig->RandomSuffixMode));
         handler->PSendSysMessage("Formula Version: {}, Generator Revision: {}", sItemScalingConfig->FormulaVersion, ITEM_SCALING_GENERATOR_REVISION);
         handler->PSendSysMessage("Database Synchronized: {}", sItemScalingRegistry->IsDbSynchronized() ? "|cff00ff00YES|r" : "|cffff0000NO|r");
         handler->PSendSysMessage("Registry Initialized: {}", sItemScalingRegistry->IsInitialized() ? "|cff00ff00YES|r" : "|cffff0000NO|r");
         handler->PSendSysMessage("In-Memory Scaled Variants: |cff00ff00{}|r", sItemScalingRegistry->GetIndexedVariantCount());
         handler->PSendSysMessage("Allocated Synthetic Entry IDs: |cff00ff00{}|r", sItemScalingRegistry->GetSyntheticEntryCount());
+        auto live = sItemScalingLive->GetDiagnostics();
+        handler->PSendSysMessage("Live Scaling: {} | Mode: {} (1=Entry, 2=Drop) | Available slots: {}",
+            live.enabled ? "Enabled" : "Inactive", uint32(sItemScalingConfig->LiveGenerationMode), live.available);
+        handler->PSendSysMessage("Live Variants: Pending={} Durable={} Ready={} | Failures={}",
+            live.pending, live.durable, live.ready, live.failures);
         handler->PSendSysMessage("|cffaaaaaaUsage: .itemscaling preview <itemLink|itemId> [targetLevel]|r");
         return true;
     }
@@ -205,7 +211,7 @@ public:
         }
         else
         {
-            handler->PSendSysMessage("Synthetic Variant Status: |cffffd100Pending Demand (Auto-generated on real instance drop)|r");
+            handler->PSendSysMessage("Synthetic Variant Status: |cffffd100Not ready (generated on entry/drop in live mode, or next restart in legacy mode)|r");
         }
 
         // Armor

@@ -32,16 +32,20 @@ def sql_engine(directory):
     if args.library_path:
         env['LD_LIBRARY_PATH'] = str(args.library_path.resolve())
     server = (args.mysqld or args.mariadbd).resolve()
-    command = [str(server), '--no-defaults', '--datadir=' + directory,
-               '--innodb-use-native-aio=0', '--innodb-buffer-pool-size=32M']
-    if os.geteuid() == 0:
+    command = [str(server), '--no-defaults', '--datadir=' + directory, '--innodb-buffer-pool-size=32M']
+    if os.name != 'nt':
+        command.append('--innodb-use-native-aio=0')
+    if hasattr(os, 'geteuid') and os.geteuid() == 0:
         command.append('--user=root')
     process = None
+    error_log = pathlib.Path(directory, 'mysql.log' if args.mysqld else 'bootstrap.log')
 
     def stop():
         nonlocal process
         if process is not None:
-            process.terminate()
+            # MySQL's Windows launcher may have a child server. Shut down the
+            # isolated instance through its private connection, never a global service.
+            subprocess.run(client, input='SHUTDOWN;', text=True, capture_output=True, env=env, timeout=30)
             try:
                 process.wait(timeout=30)
             except subprocess.TimeoutExpired:
@@ -56,7 +60,8 @@ def sql_engine(directory):
         if not args.mysqld:
             return  # Each MariaDB bootstrap invocation already starts a new process.
         stop()
-        process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+        process = subprocess.Popen(command + (['--console'] if os.name == 'nt' else []),
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline and process.poll() is None:
             probe = subprocess.run(client, input='SELECT 1;', text=True, capture_output=True, env=env, timeout=5)
@@ -67,26 +72,32 @@ def sql_engine(directory):
 
     def run(items, expect_success=True):
         payload = '\n'.join(item.rstrip().rstrip(';') + ';' for item in items) + '\n'
+        previous_log_size = error_log.stat().st_size if error_log.exists() else 0
         result = subprocess.run(client, input=payload, text=True, capture_output=True, env=env, timeout=60)
+        if result.returncode and error_log.exists():
+            result.stderr += error_log.read_bytes()[previous_log_size:].decode('utf-8', errors='replace')
         if (result.returncode == 0) != expect_success:
             raise AssertionError(result.stdout + result.stderr)
         return result
 
     try:
         if args.mysqld:
+            socket = 'item-scaling-' + pathlib.Path(directory).name if os.name == 'nt' else directory + '/mysql.sock'
             command += ['--basedir=' + str(server.parent.parent), '--skip-networking', '--mysqlx=OFF',
                         '--secure-file-priv=NULL',
-                        '--socket=' + directory + '/mysql.sock', '--pid-file=' + directory + '/mysql.pid',
+                        '--socket=' + socket, '--pid-file=' + directory + '/mysql.pid',
                         '--log-error=' + directory + '/mysql.log']
+            if os.name == 'nt':
+                command.append('--enable-named-pipe')
             initialized = subprocess.run(command + ['--initialize-insecure'], text=True,
                                          capture_output=True, env=env, timeout=60)
             if initialized.returncode:
                 raise AssertionError(initialized.stderr + pathlib.Path(directory, 'mysql.log').read_text())
-            client = [str(args.mysql.resolve()), '--no-defaults', '--protocol=SOCKET',
-                      '--socket=' + directory + '/mysql.sock', '--user=root', '--batch', '--skip-column-names']
+            client = [str(args.mysql.resolve()), '--no-defaults', '--protocol=' + ('PIPE' if os.name == 'nt' else 'SOCKET'),
+                      '--socket=' + socket, '--user=root', '--batch', '--skip-column-names']
             restart()
         else:
-            client = command + ['--bootstrap']
+            client = command + ['--bootstrap', '--log-error=' + str(error_log)]
         yield run, restart
     finally:
         stop()
@@ -113,12 +124,12 @@ key_predicate = strings(function('std::string KeyPredicate', 'std::string Delete
 completed_delete = strings(function('std::string DeleteCompletedRequest', 'std::string VariantInsert'))
 base_columns = query_after('std::string const BaseColumns =')
 base_sql = (module / 'sql/world/base/scaled_item_variant.sql').read_text()
-install_files = sorted((module / 'data/sql/db-world/updates').glob('*.sql'))
-assert len(install_files) == 1, 'One direct first-install schema is required'
-install_sql = install_files[0].read_text()
-assert install_sql == base_sql, 'Both installation routes must define exactly the same schema'
+install_sql = (module / 'data/sql/db-world/updates/2026_09_27_00_item_scaling_initial_schema.sql').read_text()
+live_sql = (module / 'data/sql/db-world/updates/2026_10_04_00_item_scaling_live.sql').read_text()
+create_tables = lambda text: re.findall(r'CREATE TABLE.*?\) ENGINE=.*?;', text, re.S)
+assert create_tables(install_sql) == create_tables(base_sql), 'Both installation routes must define the same schema'
 assert len(re.findall(r'^CREATE TABLE IF NOT EXISTS', install_sql, re.M)) == 2
-assert not re.search(r'^\s*(ALTER|UPDATE|DELETE|DROP|INSERT)\b', install_sql, re.M | re.I)
+assert not re.search(r'^\s*(ALTER|UPDATE|DELETE|DROP|INSERT)\b', base_sql, re.M | re.I)
 
 # Source checks complement the SQL execution below; these do not execute worldserver control flow.
 validate = function('bool ItemScalingRegistry::ValidateSchema()', 'bool ItemScalingRegistry::ResolveSyntheticEntryRange()')
@@ -274,6 +285,12 @@ check('(SELECT stat_value3 FROM base_projection)=20')
 # Explicit bindings make newly introduced formatted queries require a fixture here.
 key_columns = query_after('std::string const KeyColumns =')
 identity_columns = query_after('std::string const IdentityColumns =')
+sql(live_sql)
+sql(live_sql)  # The staging migration must also be repeatable.
+for table in ['creature', 'gameobject', 'gameobject_template', 'creature_loot_template',
+              'gameobject_loot_template', 'reference_loot_template', 'item_enchantment_template']:
+    contents = (args.core / 'data/sql/base/db_world' / (table + '.sql')).read_text()
+    sql(re.search(r'CREATE TABLE.*?\) ENGINE=.*?;', contents, re.S).group(0))
 query_bindings = {
     'SELECT COUNT(*) FROM scaled_item_variant s ': [('60000,60001',)],
     'SELECT COLUMN_NAME,DATA_TYPE': [('scaled_item_variant',), ('scaled_item_variant_request',)],
@@ -284,6 +301,8 @@ query_bindings = {
     'SELECT {} FROM item_template': [(base_columns, 100), (base_columns, 999)],
     'SELECT COUNT(*) FROM scaled_item_variant WHERE generator_revision': [(1, 1, 1)],
     'SELECT variant_entry,{},{},preserve_nonzero_stats': [(key_columns, identity_columns)],
+    'SELECT Entry,Item,Reference': [('creature_loot_template',), ('gameobject_loot_template',),
+                                  ('reference_loot_template',)],
 }
 query_count = 0
 for cpp in sorted((module / 'src').glob('*.cpp')):
@@ -313,6 +332,35 @@ check('(SELECT COUNT(*) FROM scaled_item_variant_request)=3')
 sql('CREATE TABLE committed_before AS SELECT * FROM scaled_item_variant')
 sql('CREATE TABLE generated_before AS SELECT * FROM item_template WHERE entry=60000')
 
+# A live item is durable in staging before it is made available in RAM. Execute
+# the actual C++ promotion statements; no C++ compiler or worldserver is involved.
+live_source = (module / 'src/ItemScalingLive.cpp').read_text()
+recovery = live_source[live_source.index('bool ItemScalingLive::RecoverStagedTemplates()'):
+                       live_source.index('bool ItemScalingLive::ReserveSlots()')]
+promotion = [strings(fragment) for fragment in re.findall(
+    r'transaction->Append\(\s*((?:"(?:\\.|[^"\\])*"\s*)+)\)', recovery)]
+assert len(promotion) == 6, 'Recognize every live promotion statement'
+recovery_query = strings(re.search(
+    r'QueryResult counts = WorldDatabase.Query\(\s*((?:"(?:\\.|[^"\\])*"\s*)+)\)', recovery).group(1))
+live_values = values.copy()
+live_values[0] = 65000
+live_insert = insert.format(*live_values).replace('INSERT INTO item_template',
+                                                'INSERT INTO mod_item_level_scaling_staged_item', 1)
+live_mapping = mapping(65000, formula=7, revision=2).replace(
+    'INSERT INTO scaled_item_variant', 'INSERT INTO mod_item_level_scaling_staged_variant', 1)
+sql("INSERT INTO item_template (entry,name,class,stackable) VALUES (65000,'ItemScaling reserved',15,1)")
+sql('INSERT INTO mod_item_level_scaling_slot (entry) VALUES (65000)')
+sql('START TRANSACTION')
+sql(live_insert)
+sql(live_mapping)
+sql('UPDATE mod_item_level_scaling_slot SET assigned=1 WHERE entry=65000 AND assigned=0')
+sql('COMMIT')
+sql('CREATE TABLE live_before AS SELECT * FROM mod_item_level_scaling_staged_item WHERE entry=65000')
+check("(SELECT name FROM item_template WHERE entry=65000)='ItemScaling reserved'")
+check('(SELECT COUNT(*) FROM scaled_item_variant WHERE variant_entry=65000)=0')
+check('(SELECT COUNT(*) FROM mod_item_level_scaling_staged_variant WHERE variant_entry=65000)=1')
+sql(recovery_query)
+
 if args.mysql_initialize_only:
     # MySQL's supported init-file path executes SQL without starting any listener.
     # This subset deliberately makes no claim to cover restart or failure rollback.
@@ -338,7 +386,7 @@ if args.mysql_initialize_only:
         command = [str(server), '--no-defaults', '--initialize-insecure', '--datadir=' + str(root / 'data'),
                    '--basedir=' + str(server.parent.parent), '--secure-file-priv=NULL',
                    '--innodb-use-native-aio=0', '--innodb-buffer-pool-size=32M', '--init-file=' + str(init_file)]
-        if os.geteuid() == 0:
+        if hasattr(os, 'geteuid') and os.geteuid() == 0:
             command.append('--user=root')
         result = subprocess.run(command, text=True, capture_output=True, env=env, timeout=60)
         assert result.returncode == 0 and '[ERROR]' not in result.stderr, result.stdout + result.stderr
@@ -364,6 +412,32 @@ with tempfile.TemporaryDirectory(prefix='item-scaling-sql-') as directory, sql_e
          + ' AND '.join(f'b.`{column}` <=> i.`{column}`' for column in item_columns) + ')=1,1,0))',
          'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM scaled_item_variant_request)=3,1,0))'])
     print('PASS: a second DB start preserves exact committed IDs, values, metadata and pending demand', flush=True)
+    run(['USE fixture',
+         "INSERT INTO assertions VALUES (IF((SELECT name FROM item_template WHERE entry=65000)='ItemScaling reserved',1,0))",
+         'INSERT INTO assertions VALUES (IF((SELECT assigned FROM mod_item_level_scaling_slot WHERE entry=65000)=1,1,0))',
+         'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM mod_item_level_scaling_staged_item s '
+         'JOIN live_before b ON s.entry=b.entry WHERE '
+         + ' AND '.join(f's.`{column}` <=> b.`{column}`' for column in item_columns) + ')=1,1,0))'])
+    print('PASS: staged snapshot and reserved ID survive a DB restart before promotion', flush=True)
+    # A changed base must never alter a staged/issued template.
+    run(['USE fixture', 'UPDATE item_template SET armor=999,stat_value1=999 WHERE entry=100'])
+    # A reserved ID collision must roll back promotion and keep its payload available.
+    run(['USE fixture', "UPDATE item_template SET name='User custom item' WHERE entry=65000"])
+    run(['USE fixture', 'START TRANSACTION', *promotion, 'COMMIT'], expect_success=False)
+    run(['USE fixture',
+         'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM mod_item_level_scaling_staged_item)=1,1,0))',
+         "INSERT INTO assertions VALUES (IF((SELECT name FROM item_template WHERE entry=65000)='User custom item',1,0))",
+         "UPDATE item_template SET name='ItemScaling reserved' WHERE entry=65000"])
+    run(['USE fixture', 'START TRANSACTION', *promotion, 'COMMIT',
+         'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM live_before b '
+         'JOIN item_template i ON b.entry=i.entry WHERE '
+         + ' AND '.join(f'b.`{column}` <=> i.`{column}`' for column in item_columns) + ')=1,1,0))',
+         'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM scaled_item_variant WHERE variant_entry=65000)=1,1,0))',
+         'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM mod_item_level_scaling_staged_item)=0,1,0))',
+         'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM mod_item_level_scaling_staged_variant)=0,1,0))',
+         'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM mod_item_level_scaling_slot)=0,1,0))'])
+    run(['USE fixture', 'START TRANSACTION', *promotion, 'COMMIT'])
+    print('PASS: atomic promotion, collision rollback, exact snapshots after base changes, repeat promotion', flush=True)
     # NULL metadata is invalid for either table; use strict inserts rather than INSERT IGNORE.
     for table, statement in [('scaled_item_variant_request', request(required=54).replace('INSERT IGNORE', 'INSERT')),
                              ('scaled_item_variant', mapping(60000, required=54))]:
@@ -375,7 +449,8 @@ with tempfile.TemporaryDirectory(prefix='item-scaling-sql-') as directory, sql_e
             invalid = tokens[0] + ('VALUES (' if table.endswith('_request') else 'SELECT ') + ','.join(fields)
             result = run(['USE fixture', "SET SESSION sql_mode='STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION'", invalid],
                          expect_success=False)
-            assert 'cannot be null' in result.stderr.lower(), result.stderr
+            diagnostic = result.stdout + result.stderr
+            assert 'cannot be null' in diagnostic.lower(), diagnostic
     print('PASS: all eight snapshot/provenance fields reject NULL in both tables', flush=True)
     # Force duplicate key failure in the second half of a transaction. The first half must roll back.
     failed_values = values.copy()
@@ -383,14 +458,14 @@ with tempfile.TemporaryDirectory(prefix='item-scaling-sql-') as directory, sql_e
     run(['USE fixture', request()])
     result = run(['USE fixture', 'START TRANSACTION', insert.format(*failed_values),
                   mapping(60003), delete_request(entry=60003), 'COMMIT'], expect_success=False)
-    assert 'Duplicate entry' in result.stderr, result.stderr
+    assert 'Duplicate entry' in result.stdout + result.stderr, result.stdout + result.stderr
     run(['USE fixture', 'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM item_template WHERE entry=60003)=0,1,0))',
          'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM scaled_item_variant_request WHERE '
          + key_predicate.format(100, 53, 150, 1, 1, 50, 0) + ')=1,1,0))'])
     print('PASS: duplicate mapping causes transaction rollback; no orphan template and request retained', flush=True)
     # Missing committed templates are corruption: reserve the mapping, do not create a replacement.
     run(['USE fixture', 'DELETE FROM item_template WHERE entry=60001',
-         'INSERT INTO assertions VALUES (IF((SELECT MAX(variant_entry) FROM scaled_item_variant)=60001,1,0))',
+         'INSERT INTO assertions VALUES (IF((SELECT MAX(variant_entry) FROM scaled_item_variant WHERE formula_version=1 AND generator_revision=1)=60001,1,0))',
          'INSERT INTO assertions VALUES (IF((SELECT COUNT(*) FROM scaled_item_variant '
          'WHERE variant_entry=60001 AND required_level=53)=1,1,0))'])
     print('PASS: missing-template mappings keep permanent allocator reservations (initialization guard checked statically)',

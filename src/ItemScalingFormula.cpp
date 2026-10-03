@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <set>
 
 namespace ItemScalingFormula
 {
@@ -439,249 +440,152 @@ namespace ItemScalingFormula
         return hasScalableField;
     }
 
-    void BakeRandomSuffixStats(ItemTemplate& scaledProto, ItemTemplate const* baseProto, int32 randomPropertyId, uint16 targetItemLevel, double rBudget)
+    bool CanBakeRandomProperty(ItemTemplate const& base, int32 randomPropertyId)
     {
-        if (randomPropertyId == 0 || !baseProto)
-            return;
-
-        // Clear random properties on the synthetic item template so client treats it as fixed-stat gear
-        scaledProto.RandomSuffix = 0;
-        scaledProto.RandomProperty = 0;
-
-        if (randomPropertyId < 0)
+        if (!randomPropertyId || randomPropertyId == std::numeric_limits<int32>::min() ||
+            (base.RandomProperty != 0 && base.RandomSuffix != 0))
+            return false;
+        ItemRandomSuffixEntry const* suffix = randomPropertyId < 0 ?
+            RandomSuffixStore.LookupEntry(static_cast<uint32>(-randomPropertyId)) : nullptr;
+        ItemRandomPropertiesEntry const* property = randomPropertyId > 0 ?
+            RandomPropertyStore.LookupEntry(static_cast<uint32>(randomPropertyId)) : nullptr;
+        if ((randomPropertyId < 0 && (!base.RandomSuffix || !suffix)) ||
+            (randomPropertyId > 0 && (!base.RandomProperty || !property)))
+            return false;
+        std::set<uint32> types;
+        for (uint32 i = 0; i < base.StatsCount; ++i)
+            types.insert(base.ItemStat[i].ItemStatType);
+        bool hasBonus = false;
+        for (uint32 k = 0; k < 5; ++k)
         {
-            uint32 suffixId = static_cast<uint32>(-randomPropertyId);
-            ItemRandomSuffixEntry const* suffix = RandomSuffixStore.LookupEntry(suffixId);
-            if (!suffix)
-                return;
-
-            if (suffix->Name[0] && suffix->Name[0][0] != '\0')
+            uint32 id = suffix ? suffix->Enchantment[k] : property->Enchantment[k];
+            if (!id)
+                continue;
+            auto enchantment = EnchantmentStore.LookupEntry(id);
+            if (!enchantment)
+                return false;
+            for (uint32 i = 0; i < 3; ++i)
             {
-                scaledProto.Name1 = baseProto->Name1 + " " + suffix->Name[0];
-            }
-
-            RandomPropertiesPointsEntry const* entry = BudgetStore.LookupEntry(targetItemLevel);
-            if (!entry)
-            {
-                for (int32 delta = 1; delta <= 50; ++delta)
-                {
-                    if (targetItemLevel > static_cast<uint32>(delta))
-                    {
-                        entry = BudgetStore.LookupEntry(targetItemLevel - delta);
-                        if (entry)
-                            break;
-                    }
-                    entry = BudgetStore.LookupEntry(targetItemLevel + delta);
-                    if (entry)
-                        break;
-                }
-            }
-
-            uint32 slotIdx = 0;
-            switch (baseProto->InventoryType)
-            {
-                case INVTYPE_HEAD:
-                case INVTYPE_BODY:
-                case INVTYPE_CHEST:
-                case INVTYPE_LEGS:
-                case INVTYPE_2HWEAPON:
-                case INVTYPE_ROBE:
-                    slotIdx = 0;
-                    break;
-                case INVTYPE_SHOULDERS:
-                case INVTYPE_WAIST:
-                case INVTYPE_FEET:
-                case INVTYPE_HANDS:
-                case INVTYPE_TRINKET:
-                    slotIdx = 1;
-                    break;
-                case INVTYPE_NECK:
-                case INVTYPE_WRISTS:
-                case INVTYPE_FINGER:
-                case INVTYPE_SHIELD:
-                case INVTYPE_CLOAK:
-                case INVTYPE_HOLDABLE:
-                    slotIdx = 2;
-                    break;
-                case INVTYPE_WEAPON:
-                case INVTYPE_WEAPONMAINHAND:
-                case INVTYPE_WEAPONOFFHAND:
-                    slotIdx = 3;
-                    break;
-                case INVTYPE_RANGED:
-                case INVTYPE_THROWN:
-                case INVTYPE_RANGEDRIGHT:
-                    slotIdx = 4;
-                    break;
-                default:
-                    slotIdx = 2;
-                    break;
-            }
-
-            uint32 totalPoints = 0;
-            if (entry)
-            {
-                switch (baseProto->Quality)
-                {
-                    case ITEM_QUALITY_UNCOMMON:
-                        totalPoints = entry->UncommonPropertiesPoints[slotIdx];
-                        break;
-                    case ITEM_QUALITY_RARE:
-                        totalPoints = entry->RarePropertiesPoints[slotIdx];
-                        break;
-                    case ITEM_QUALITY_EPIC:
-                        totalPoints = entry->EpicPropertiesPoints[slotIdx];
-                        break;
-                    default:
-                        totalPoints = entry->UncommonPropertiesPoints[slotIdx];
-                        break;
-                }
-            }
-
-            for (uint32 k = 0; k < 5; ++k)
-            {
-                uint32 enchId = suffix->Enchantment[k];
-                if (!enchId)
+                uint32 type = enchantment->type[i];
+                if (!type)
                     continue;
-
-                SpellItemEnchantmentEntry const* ench = EnchantmentStore.LookupEntry(enchId);
-                if (!ench)
-                    continue;
-
-                uint32 allocPct = suffix->AllocationPct[k];
-                uint32 statVal = (totalPoints * allocPct) / 10000;
-                if (statVal == 0 && totalPoints > 0 && allocPct > 0)
-                    statVal = 1;
-
-                for (uint32 s = 0; s < 3; ++s)
+                hasBonus = true;
+                if (type == 5) // ITEM_ENCHANTMENT_TYPE_STAT
                 {
-                    if (ench->type[s] == 5 /* ITEM_ENCHANTMENT_TYPE_STAT */)
+                    if (enchantment->spellid[i] >= MAX_ITEM_MOD)
+                        return false;
+                    types.insert(enchantment->spellid[i]);
+                }
+                else if (type != 4 || enchantment->spellid[i] < SPELL_SCHOOL_HOLY ||
+                    enchantment->spellid[i] > SPELL_SCHOOL_ARCANE)
+                    return false; // Proc/spell/damage bonuses cannot be silently discarded.
+            }
+        }
+        return hasBonus && types.size() <= MAX_ITEM_PROTO_STATS;
+    }
+
+    bool IsValidBakedTemplate(ItemTemplate const& base, ItemTemplate const& scaled, int32 randomPropertyId)
+    {
+        if (scaled.StatsCount > MAX_ITEM_PROTO_STATS || scaled.ItemLevel == 0 || scaled.ItemLevel > 300 ||
+            scaled.RequiredLevel == 0 || scaled.RequiredLevel > 80)
+            return false;
+        for (auto const& damage : scaled.Damage)
+            if (!std::isfinite(damage.DamageMin) || !std::isfinite(damage.DamageMax))
+                return false;
+        if (!randomPropertyId)
+            return base.RandomProperty == 0 && base.RandomSuffix == 0;
+        return CanBakeRandomProperty(base, randomPropertyId) && scaled.RandomProperty == 0 && scaled.RandomSuffix == 0;
+    }
+
+    bool BakeRandomSuffixStats(ItemTemplate& scaledProto, ItemTemplate const* baseProto,
+        int32 randomPropertyId, uint16 targetItemLevel, double rBudget)
+    {
+        if (!baseProto || !CanBakeRandomProperty(*baseProto, randomPropertyId))
+            return false;
+        ItemTemplate baked = scaledProto;
+        auto suffix = randomPropertyId < 0 ?
+            RandomSuffixStore.LookupEntry(static_cast<uint32>(-randomPropertyId)) : nullptr;
+        auto property = randomPropertyId > 0 ?
+            RandomPropertyStore.LookupEntry(static_cast<uint32>(randomPropertyId)) : nullptr;
+        char const* name = suffix ? suffix->Name[0] : property->Name[0];
+        if (name && name[0])
+            baked.Name1 = baseProto->Name1 + " " + name;
+        int8 family = GetSlotFamily(baseProto->InventoryType);
+        double points = GetRandomPropertiesPoints(targetItemLevel, baseProto->Quality,
+            family < 0 ? 2 : static_cast<uint8>(family));
+        if (suffix && (!std::isfinite(points) || points <= 0))
+            return false;
+        auto accumulate = [](int32& current, int64 amount, bool resistance)
+        {
+            int64 sum = int64(current) + amount;
+            int64 minimum = resistance ? std::numeric_limits<int16>::min() : std::numeric_limits<int32>::min();
+            int64 maximum = resistance ? std::numeric_limits<int16>::max() : std::numeric_limits<int32>::max();
+            if (sum < minimum || sum > maximum)
+                return false;
+            current = static_cast<int32>(sum);
+            return true;
+        };
+        for (uint32 k = 0; k < 5; ++k)
+        {
+            uint32 id = suffix ? suffix->Enchantment[k] : property->Enchantment[k];
+            if (!id)
+                continue;
+            auto enchantment = EnchantmentStore.LookupEntry(id);
+            for (uint32 i = 0; i < 3; ++i)
+            {
+                uint32 type = enchantment->type[i];
+                if (!type)
+                    continue;
+                double amount = suffix ? std::floor(points * suffix->AllocationPct[k] / 10000.0) :
+                    std::round(double(enchantment->amount[i]) * rBudget);
+                if ((suffix ? suffix->AllocationPct[k] != 0 : enchantment->amount[i] != 0) && amount == 0 &&
+                    sItemScalingConfig->PreserveNonZeroStats)
+                    amount = suffix || enchantment->amount[i] > 0 ? 1 : -1;
+                if (!std::isfinite(amount) || amount < std::numeric_limits<int32>::min() ||
+                    amount > std::numeric_limits<int32>::max())
+                    return false;
+                int64 value = static_cast<int64>(amount);
+                if (!value)
+                    continue;
+                uint32 stat = enchantment->spellid[i];
+                if (type == 5)
+                {
+                    uint32 index = 0;
+                    while (index < baked.StatsCount && baked.ItemStat[index].ItemStatType != stat)
+                        ++index;
+                    if (index == baked.StatsCount)
                     {
-                        uint32 statType = ench->spellid[s];
-                        bool found = false;
-                        for (uint32 i = 0; i < scaledProto.StatsCount; ++i)
-                        {
-                            if (scaledProto.ItemStat[i].ItemStatType == statType)
-                            {
-                                scaledProto.ItemStat[i].ItemStatValue += static_cast<int32>(statVal);
-                                found = true;
-                                break;
-                            }
-                        }
-                        if (!found && scaledProto.StatsCount < MAX_ITEM_PROTO_STATS)
-                        {
-                            scaledProto.ItemStat[scaledProto.StatsCount].ItemStatType = statType;
-                            scaledProto.ItemStat[scaledProto.StatsCount].ItemStatValue = static_cast<int32>(statVal);
-                            ++scaledProto.StatsCount;
-                        }
+                        if (index >= MAX_ITEM_PROTO_STATS)
+                            return false;
+                        baked.ItemStat[index].ItemStatType = stat;
+                        baked.ItemStat[index].ItemStatValue = 0;
+                        ++baked.StatsCount;
                     }
-                    else if (ench->type[s] == 4 /* ITEM_ENCHANTMENT_TYPE_RESISTANCE */)
+                    if (!accumulate(baked.ItemStat[index].ItemStatValue, value, false))
+                        return false;
+                }
+                else
+                {
+                    int32* resistance = nullptr;
+                    switch (stat)
                     {
-                        uint32 school = ench->spellid[s];
-                        switch (school)
-                        {
-                            case SPELL_SCHOOL_HOLY:
-                                scaledProto.HolyRes += static_cast<int16>(statVal);
-                                break;
-                            case SPELL_SCHOOL_FIRE:
-                                scaledProto.FireRes += static_cast<int16>(statVal);
-                                break;
-                            case SPELL_SCHOOL_NATURE:
-                                scaledProto.NatureRes += static_cast<int16>(statVal);
-                                break;
-                            case SPELL_SCHOOL_FROST:
-                                scaledProto.FrostRes += static_cast<int16>(statVal);
-                                break;
-                            case SPELL_SCHOOL_SHADOW:
-                                scaledProto.ShadowRes += static_cast<int16>(statVal);
-                                break;
-                            case SPELL_SCHOOL_ARCANE:
-                                scaledProto.ArcaneRes += static_cast<int16>(statVal);
-                                break;
-                            default:
-                                break;
-                        }
+                        case SPELL_SCHOOL_HOLY: resistance = &baked.HolyRes; break;
+                        case SPELL_SCHOOL_FIRE: resistance = &baked.FireRes; break;
+                        case SPELL_SCHOOL_NATURE: resistance = &baked.NatureRes; break;
+                        case SPELL_SCHOOL_FROST: resistance = &baked.FrostRes; break;
+                        case SPELL_SCHOOL_SHADOW: resistance = &baked.ShadowRes; break;
+                        case SPELL_SCHOOL_ARCANE: resistance = &baked.ArcaneRes; break;
+                        default: return false;
                     }
+                    if (!accumulate(*resistance, value, true))
+                        return false;
                 }
             }
         }
-        else // randomPropertyId > 0
-        {
-            uint32 propId = static_cast<uint32>(randomPropertyId);
-            ItemRandomPropertiesEntry const* prop = RandomPropertyStore.LookupEntry(propId);
-            if (!prop)
-                return;
-
-            if (prop->Name[0] && prop->Name[0][0] != '\0')
-            {
-                scaledProto.Name1 = baseProto->Name1 + " " + prop->Name[0];
-            }
-
-            for (uint32 k = 0; k < 5; ++k)
-            {
-                uint32 enchId = prop->Enchantment[k];
-                if (!enchId)
-                    continue;
-
-                SpellItemEnchantmentEntry const* ench = EnchantmentStore.LookupEntry(enchId);
-                if (!ench)
-                    continue;
-
-                for (uint32 s = 0; s < 3; ++s)
-                {
-                    int32 baseAmount = static_cast<int32>(ench->amount[s]);
-                    int32 scaledAmount = ScaleAdditiveStat(baseAmount, rBudget, sItemScalingConfig->PreserveNonZeroStats);
-
-                    if (ench->type[s] == 5 /* ITEM_ENCHANTMENT_TYPE_STAT */)
-                    {
-                        uint32 statType = ench->spellid[s];
-                        bool found = false;
-                        for (uint32 i = 0; i < scaledProto.StatsCount; ++i)
-                        {
-                            if (scaledProto.ItemStat[i].ItemStatType == statType)
-                            {
-                                scaledProto.ItemStat[i].ItemStatValue += scaledAmount;
-                                found = true;
-                                break;
-                            }
-                        }
-                        if (!found && scaledProto.StatsCount < MAX_ITEM_PROTO_STATS)
-                        {
-                            scaledProto.ItemStat[scaledProto.StatsCount].ItemStatType = statType;
-                            scaledProto.ItemStat[scaledProto.StatsCount].ItemStatValue = scaledAmount;
-                            ++scaledProto.StatsCount;
-                        }
-                    }
-                    else if (ench->type[s] == 4 /* ITEM_ENCHANTMENT_TYPE_RESISTANCE */)
-                    {
-                        uint32 school = ench->spellid[s];
-                        switch (school)
-                        {
-                            case SPELL_SCHOOL_HOLY:
-                                scaledProto.HolyRes += static_cast<int16>(scaledAmount);
-                                break;
-                            case SPELL_SCHOOL_FIRE:
-                                scaledProto.FireRes += static_cast<int16>(scaledAmount);
-                                break;
-                            case SPELL_SCHOOL_NATURE:
-                                scaledProto.NatureRes += static_cast<int16>(scaledAmount);
-                                break;
-                            case SPELL_SCHOOL_FROST:
-                                scaledProto.FrostRes += static_cast<int16>(scaledAmount);
-                                break;
-                            case SPELL_SCHOOL_SHADOW:
-                                scaledProto.ShadowRes += static_cast<int16>(scaledAmount);
-                                break;
-                            case SPELL_SCHOOL_ARCANE:
-                                scaledProto.ArcaneRes += static_cast<int16>(scaledAmount);
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                }
-            }
-        }
+        baked.RandomProperty = 0;
+        baked.RandomSuffix = 0;
+        scaledProto = std::move(baked);
+        return true;
     }
 
     ItemTemplate CreateScaledTemplate(ItemTemplate const* baseProto, uint32 newEntry, uint8 targetEffectiveLevel, uint16 targetItemLevel, uint8 /*formulaVersion*/, uint8 highestRealPlayerLevel, int32 randomPropertyId)
@@ -754,9 +658,19 @@ namespace ItemScalingFormula
         // 10. Bake random suffix stats if this is a random suffix/property variant
         if (randomPropertyId != 0)
         {
-            BakeRandomSuffixStats(scaledProto, baseProto, randomPropertyId, targetItemLevel, rBudget);
+            if (!BakeRandomSuffixStats(scaledProto, baseProto, randomPropertyId, targetItemLevel, rBudget))
+                return scaledProto; // Random fields stay nonzero; validation withholds this variant.
         }
 
+        // Match ObjectMgr's loader, which omits zero-valued stat rows. The runtime
+        // query response and the next startup must expose the same compact stat array.
+        uint32 count = 0;
+        for (uint32 i = 0; i < scaledProto.StatsCount; ++i)
+            if (scaledProto.ItemStat[i].ItemStatValue != 0)
+                scaledProto.ItemStat[count++] = scaledProto.ItemStat[i];
+        for (uint32 i = count; i < MAX_ITEM_PROTO_STATS; ++i)
+            scaledProto.ItemStat[i] = {};
+        scaledProto.StatsCount = count;
         return scaledProto;
     }
 }

@@ -18,8 +18,16 @@ ItemScalingConfig* ItemScalingConfig::instance()
 
 void ItemScalingConfig::Load(bool reload)
 {
+    ++Revision;
     if (reload)
     {
+        if (sConfigMgr->GetOption<bool>("ItemScaling.Live.Enable", true) != LiveEnable ||
+            sConfigMgr->GetOption<uint32>("ItemScaling.Live.GenerationMode", 1) != LiveGenerationMode ||
+            sConfigMgr->GetOption<uint32>("ItemScaling.Live.ReservedSlots", 4096) != LiveReservedSlots ||
+            sConfigMgr->GetOption<uint32>("ItemScaling.Live.MaxPendingVariants", 4096) != LiveMaxPendingVariants ||
+            sConfigMgr->GetOption<uint32>("ItemScaling.Live.MaxPublishPerTick", 64) != LiveMaxPublishPerTick ||
+            sConfigMgr->GetOption<uint32>("ItemScaling.Live.LootWaitTimeoutMs", 10000) != LiveLootWaitTimeoutMs)
+            LOG_WARN("module.ItemScaling", "ItemScaling: Live.* settings require restart; active values retained.");
         uint8 newFormula = static_cast<uint8>(std::clamp<uint32>(
             sConfigMgr->GetOption<uint32>("ItemScaling.FormulaVersion", 1), 1, 255));
         bool newDemand = sConfigMgr->GetOption<bool>("ItemScaling.DemandLedger.Enable", true);
@@ -148,6 +156,17 @@ void ItemScalingConfig::Load(bool reload)
         SyntheticEntryMaximum = std::clamp<uint32>(
             sConfigMgr->GetOption<uint32>("ItemScaling.SyntheticEntry.Maximum", 2000000), 60000, 10000000);
         FormulaVersion = static_cast<uint8>(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("ItemScaling.FormulaVersion", 1), 1, 255));
+        LiveEnable = sConfigMgr->GetOption<bool>("ItemScaling.Live.Enable", true);
+        LiveGenerationMode = static_cast<uint8>(std::clamp<uint32>(
+            sConfigMgr->GetOption<uint32>("ItemScaling.Live.GenerationMode", 1), 1, 2));
+        LiveReservedSlots = std::clamp<uint32>(
+            sConfigMgr->GetOption<uint32>("ItemScaling.Live.ReservedSlots", 4096), 1, 250000);
+        LiveMaxPendingVariants = std::clamp<uint32>(
+            sConfigMgr->GetOption<uint32>("ItemScaling.Live.MaxPendingVariants", 4096), 1, 250000);
+        LiveMaxPublishPerTick = std::clamp<uint32>(
+            sConfigMgr->GetOption<uint32>("ItemScaling.Live.MaxPublishPerTick", 64), 1, 256);
+        LiveLootWaitTimeoutMs = std::clamp<uint32>(
+            sConfigMgr->GetOption<uint32>("ItemScaling.Live.LootWaitTimeoutMs", 10000), 1000, 60000);
     }
 
     BracketStep = static_cast<uint8>(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("ItemScaling.BracketStep", 1), 1, 10));

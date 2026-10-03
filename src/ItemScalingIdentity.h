@@ -39,14 +39,16 @@ struct ItemScalingIdentity
     }
 
     // Synthetic IDs skip core DBC validation. Withhold rows whose inherited loot semantics differ.
-    static bool CompatibleLootMetadata(ItemTemplate const& base, ItemTemplate const& variant)
+    static bool CompatibleLootMetadata(ItemTemplate const& base, ItemTemplate const& variant, bool baked = false)
     {
         if (base.Quality != variant.Quality || base.Flags != variant.Flags || base.Flags2 != variant.Flags2 || base.FlagsCu != variant.FlagsCu ||
             base.MaxCount != variant.MaxCount || base.ItemLimitCategory != variant.ItemLimitCategory ||
             base.StartQuest != variant.StartQuest || base.RequiredSkill != variant.RequiredSkill ||
             base.AllowableClass != variant.AllowableClass || base.AllowableRace != variant.AllowableRace ||
-            base.Bonding != variant.Bonding || base.RandomProperty != variant.RandomProperty ||
-            base.RandomSuffix != variant.RandomSuffix || base.Stackable != variant.Stackable)
+            base.Bonding != variant.Bonding || base.Stackable != variant.Stackable)
+            return false;
+        if (baked ? (variant.RandomProperty != 0 || variant.RandomSuffix != 0) :
+            (base.RandomProperty != variant.RandomProperty || base.RandomSuffix != variant.RandomSuffix))
             return false;
         for (uint32 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
             if (base.Spells[i].SpellId != variant.Spells[i].SpellId)

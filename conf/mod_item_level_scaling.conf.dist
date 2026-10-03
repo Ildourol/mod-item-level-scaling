@@ -192,6 +192,22 @@ ItemScaling.ScaleHeirloom = 0
 
 ItemScaling.RandomSuffix.Mode = 0
 
+# First-run hybrid generation. No core, Playerbots or client patches are required.
+# All Live.* settings are startup-only. Enable=0 restores the legacy demand ledger.
+# 1: prepare exact variants during the first dungeon/raid visit (default).
+# 2: request only items that actually roll; first-time loot waits for SQL acknowledgement.
+# Both modes defer an unexpected miss and preserve original loot on failure/timeout.
+# SQL staging stores complete snapshots before award; next startup promotes them.
+ItemScaling.Live.Enable = 1
+ItemScaling.Live.GenerationMode = 1
+
+# Available inert item-template slots loaded at startup. Used slots are immutable.
+# Increasing capacity takes effect at the next restart. No runtime store resizing occurs.
+ItemScaling.Live.ReservedSlots = 4096
+ItemScaling.Live.MaxPendingVariants = 4096
+ItemScaling.Live.MaxPublishPerTick = 64
+ItemScaling.Live.LootWaitTimeoutMs = 10000
+
 #
 #    ItemScaling.PreserveNonZeroStats
 #        Description: Prevents non-zero stats from vanishing purely due to rounding to 0 at low levels.
@@ -259,9 +275,9 @@ ItemScaling.SyntheticEntry.AutoOffset = 1000
 
 #
 #    ItemScaling.DemandLedger.Enable
-#        Description: Record exact gameplay requests asynchronously and materialize them next startup.
-#                     The first unseen combination drops the original item; restart before it can scale.
-#                     No dungeon-wide pre-generation or runtime template publication occurs.
+#        Description: Legacy mode (Live.Enable=0): record exact gameplay requests asynchronously
+#                     and materialize them next startup. First unseen combinations remain original.
+#                     With Live.Enable=1, live requests use durable staging independently of this option.
 #        Default:     1 - Record and materialize demand
 #                     0 - Existing persisted variants only
 #

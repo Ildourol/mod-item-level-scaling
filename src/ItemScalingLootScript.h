@@ -7,10 +7,17 @@
 
 #include "MiscScript.h"
 
+class Map;
+struct CreatureTemplate;
+
 class ItemScalingLootScript : public MiscScript
 {
 public:
     ItemScalingLootScript();
+
+    static Player* GetEligibleOwner(Map const* map);
+    static void PrepareLoot(Loot* loot, LootStore const& store, Player* owner,
+        CreatureTemplate const* sourceOverride = nullptr, bool prewarm = false);
 
     void OnAfterLootTemplateProcess(Loot* loot, LootTemplate const* tab, LootStore const& store, Player* lootOwner, bool personal, bool noEmptyError, uint16 lootMode) override;
 };

@@ -1,6 +1,6 @@
 -- mod-item-level-scaling database integration
 --
--- This module uses a transactional demand ledger architecture.
+-- This module uses a hybrid live-snapshot and legacy demand ledger architecture.
 -- Tables:
 --   1. `scaled_item_variant`: stores permanent synthetic item entries and validated template identities.
 --   2. `scaled_item_variant_request`: stores exact gameplay demand requests pending startup materialization.
@@ -15,3 +15,10 @@
 --   - Initial schema update: data/sql/db-world/updates/2026_09_27_00_item_scaling_initial_schema.sql
 --
 -- Keep this file so DB import pipelines and db_assembler can detect module SQL presence and documentation.
+
+-- Live tables:
+--   - mod_item_level_scaling_slot: inert reserved IDs and durable assignment state.
+--   - mod_item_level_scaling_staged_item: complete saved RAM-template snapshots.
+--   - mod_item_level_scaling_staged_variant: exact keys awaiting atomic startup promotion.
+-- Migration: data/sql/db-world/updates/2026_10_04_00_item_scaling_live.sql
+-- Publication waits for async commit acknowledgement; startup preserves its ID and values.

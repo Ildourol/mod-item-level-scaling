@@ -36,6 +36,19 @@ int main()
     assert(ItemScalingIdentity::CompatibleLootMetadata(base, scaled));
     scaled.RandomProperty = 5;
     assert(!ItemScalingIdentity::CompatibleLootMetadata(base, scaled));
+    // Restart validation accepts fixed baked bonuses only for a baked key.
+    base.RandomProperty = 5;
+    scaled.RandomProperty = 0;
+    assert(!ItemScalingIdentity::CompatibleLootMetadata(base, scaled));
+    assert(ItemScalingIdentity::CompatibleLootMetadata(base, scaled, true));
+    scaled.RandomSuffix = 7;
+    assert(!ItemScalingIdentity::CompatibleLootMetadata(base, scaled, true));
+    scaled.RandomSuffix = 0;
+    base.RandomProperty = 0;
+    base.RandomSuffix = 7;
+    assert(ItemScalingIdentity::CompatibleLootMetadata(base, scaled, true));
+    scaled.Bonding = base.Bonding + 1;
+    assert(!ItemScalingIdentity::CompatibleLootMetadata(base, scaled, true));
     base.Material = 128;
     assert(!ItemScalingIdentity::CanCapture(base));
     base.Material = -129;

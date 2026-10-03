@@ -16,6 +16,7 @@ public:
     void OnBeforeFinalizePlayerWorldSession(uint32& cacheVersion) override;
     void OnLoadCustomDatabaseTable() override;
     void OnAfterConfigLoad(bool reload) override;
+    void OnUpdate(uint32 diff) override;
 };
 
 void AddItemScalingWorldScripts();

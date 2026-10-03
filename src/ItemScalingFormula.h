@@ -27,7 +27,9 @@ namespace ItemScalingFormula
 
     [[nodiscard]] bool IsScalableEquipment(ItemTemplate const* proto);
 
-    void BakeRandomSuffixStats(ItemTemplate& scaledProto, ItemTemplate const* baseProto, int32 randomPropertyId, uint16 targetItemLevel, double rBudget);
+    [[nodiscard]] bool CanBakeRandomProperty(ItemTemplate const& base, int32 randomPropertyId);
+    [[nodiscard]] bool IsValidBakedTemplate(ItemTemplate const& base, ItemTemplate const& scaled, int32 randomPropertyId);
+    bool BakeRandomSuffixStats(ItemTemplate& scaledProto, ItemTemplate const* baseProto, int32 randomPropertyId, uint16 targetItemLevel, double rBudget);
 
     [[nodiscard]] ItemTemplate CreateScaledTemplate(ItemTemplate const* baseProto, uint32 newEntry, uint8 targetEffectiveLevel, uint16 targetItemLevel, uint8 formulaVersion, uint8 highestRealPlayerLevel, int32 randomPropertyId = 0);
 }

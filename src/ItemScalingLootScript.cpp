@@ -12,6 +12,7 @@
 #include "ItemScalingConfig.h"
 #include "ItemScalingFormula.h"
 #include "ItemScalingRegistry.h"
+#include "ItemScalingLive.h"
 #include "ItemScalingSafety.h"
 #include "ItemScalingTarget.h"
 #include "Log.h"
@@ -60,7 +61,7 @@ static uint8 GetHighestEligibleRealPlayerLevel(Map const* map)
     for (auto const& ref : map->GetPlayers())
     {
         Player* player = ref.GetSource();
-        if (!player)
+        if (!player || !player->IsInWorld())
         {
             continue;
         }
@@ -140,6 +141,24 @@ static bool IsEligibleInstanceMap(Map const* map)
     return true;
 }
 
+Player* ItemScalingLootScript::GetEligibleOwner(Map const* map)
+{
+    Player* owner = nullptr;
+    if (!map)
+        return nullptr;
+    for (auto const& ref : map->GetPlayers())
+    {
+        Player* player = ref.GetSource();
+        if (!player || !player->IsInWorld() || !player->GetSession() ||
+            (sItemScalingConfig->RealPlayersOnly && IsBotSession(player->GetSession())) ||
+            (!sItemScalingConfig->IncludeGameMasters && player->IsGameMaster()))
+            continue;
+        if (!owner || owner->GetLevel() < player->GetLevel())
+            owner = player;
+    }
+    return owner;
+}
+
 void ItemScalingLootScript::OnAfterLootTemplateProcess(
     Loot* loot,
     LootTemplate const* /*tab*/,
@@ -148,6 +167,12 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
     bool /*personal*/,
     bool /*noEmptyError*/,
     uint16 /*lootMode*/)
+{
+    PrepareLoot(loot, store, lootOwner);
+}
+
+void ItemScalingLootScript::PrepareLoot(Loot* loot, LootStore const& store, Player* lootOwner,
+    CreatureTemplate const* sourceOverride, bool prewarm)
 {
     if (!sItemScalingConfig->Enable || !loot || !lootOwner)
     {
@@ -173,6 +198,9 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
     {
         return;
     }
+
+    if (!prewarm)
+        sItemScalingLive->BeginLoot(*loot, *lootOwner);
 
     // 1. Determine highest real player level (H)
     uint8 highestRealPlayerLevel = GetHighestEligibleRealPlayerLevel(map);
@@ -214,6 +242,12 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
         }
     }
 
+    if (sourceOverride)
+    {
+        cMin = sourceOverride->minlevel > 0 ? sourceOverride->minlevel : 1;
+        cSrc = sourceOverride->maxlevel > 0 ? sourceOverride->maxlevel : cMin;
+    }
+
     LFGDungeonEntry const* dungeon = GetLFGDungeon(map->GetId(), map->GetDifficulty());
     if (dungeon && dungeon->MaxLevel > 0)
     {
@@ -247,11 +281,11 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
     targetInput.minLevel = sItemScalingConfig->MinLevel;
     targetInput.maxLevel = sItemScalingConfig->MaxLevel;
     targetInput.dynamic = sItemScalingConfig->Method == SCALING_METHOD_DYNAMIC;
-    targetInput.hasCreature = creature != nullptr;
+    targetInput.hasCreature = creature != nullptr || sourceOverride != nullptr;
     targetInput.realPlayersOnly = sItemScalingConfig->RealPlayersOnly;
     uint8 lTarget = ItemScalingTarget::Resolve(targetInput);
 
-    if (sItemScalingConfig->Debug)
+    if (sItemScalingConfig->Debug && !prewarm)
     {
         LOG_INFO("module.ItemScaling", "ItemScaling: Map {} ('{}') - Player {} (H: {}) - Mode: {} - cSrc: {} cMax: {} -> Target Level: {}",
             map->GetId(), map->GetMapName(), lootOwner->GetName(), highestRealPlayerLevel,
@@ -274,6 +308,10 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
         {
             return;
         }
+
+        // Native scaling-distribution items cannot be represented by a fixed live snapshot.
+        if (baseProto->ScalingStatDistribution != 0 || baseProto->ScalingStatValue != 0)
+            return;
 
         // Entry-based limits/quest starters must not acquire a second identity. Conditions and
         // multi-drop bookkeeping remain attached to this LootItem; their cloned flags stay unchanged.
@@ -390,15 +428,19 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
             randomPropId = item.randomPropertyId;
             if (randomPropId == 0)
             {
+                if (prewarm)
+                    return;
                 randomPropId = Item::GenerateItemRandomPropertyId(baseProto->ItemId);
             }
             if (randomPropId == 0)
             {
                 return;
             }
+            if (!ItemScalingFormula::CanBakeRandomProperty(*baseProto, randomPropId))
+                return;
         }
 
-        // An exact miss records demand and leaves this occurrence unchanged.
+        // A live miss is held until its durable template is published; legacy mode queues demand.
         uint32 variantEntry = sItemScalingRegistry->FindOrRequestVariant(
             baseProto,
             lTarget,
@@ -407,6 +449,14 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
             highestRealPlayerLevel,
             randomPropId
         );
+
+        if (variantEntry == 0 && !prewarm)
+        {
+            VariantKey key{baseProto->ItemId, lTarget, targetIlvl, sItemScalingConfig->FormulaVersion,
+                ITEM_SCALING_GENERATOR_REVISION,
+                ItemScalingFormula::CalculateRequiredLevel(baseProto, lTarget, highestRealPlayerLevel), randomPropId};
+            sItemScalingLive->TrackLoot(*loot, *lootOwner, static_cast<std::size_t>(&item - loot->items.data()), key);
+        }
 
         if (variantEntry != 0 && variantEntry != item.itemid &&
             !sDisableMgr->IsDisabledFor(DISABLE_TYPE_LOOT, variantEntry, nullptr))

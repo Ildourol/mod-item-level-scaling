@@ -5,6 +5,7 @@
 #include "ItemScalingWorldScript.h"
 #include "ItemScalingConfig.h"
 #include "ItemScalingRegistry.h"
+#include "ItemScalingLive.h"
 #include "Log.h"
 
 namespace
@@ -18,7 +19,8 @@ ItemScalingWorldScript::ItemScalingWorldScript()
         WORLDHOOK_ON_BEFORE_WORLD_INITIALIZED,
         WORLDHOOK_ON_BEFORE_FINALIZE_PLAYER_WORLD_SESSION,
         WORLDHOOK_ON_LOAD_CUSTOM_DATABASE_TABLE,
-        WORLDHOOK_ON_AFTER_CONFIG_LOAD
+        WORLDHOOK_ON_AFTER_CONFIG_LOAD,
+        WORLDHOOK_ON_UPDATE
     })
 {
 }
@@ -33,11 +35,6 @@ void ItemScalingWorldScript::OnLoadCustomDatabaseTable()
 {
     sItemScalingConfig->Load();
 
-    if (!sItemScalingConfig->Enable)
-    {
-        return;
-    }
-
     sItemScalingRegistry->OnLoadCustomDatabaseTable();
 }
 
@@ -51,8 +48,14 @@ void ItemScalingWorldScript::OnBeforeWorldInitialized()
         return;
     }
 
-    // Validate and index templates loaded normally by the core; never publish templates here.
+    // Validate core-loaded templates and establish the live pool before gameplay.
     sItemScalingRegistry->Initialize();
+    sItemScalingLive->Initialize();
+}
+
+void ItemScalingWorldScript::OnUpdate(uint32 diff)
+{
+    sItemScalingLive->Update(diff);
 }
 
 void ItemScalingWorldScript::OnAfterConfigLoad(bool reload)
