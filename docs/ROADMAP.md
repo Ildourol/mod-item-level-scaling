@@ -16,6 +16,7 @@
 - [x] Synchronize module issue tracker with central `COMMANDER/ISSUES.md` catalog.
 - [x] Deploy standardized AI Maintainer skills and architectural documentation.
 - [x] Native reference match bypass and dynamic native loot preservation ([MILS-010](ISSUES.md#mils-010)).
+- [x] Decommission legacy demand ledger in favor of pure live generation ([MILS-013](ISSUES.md#mils-013)).
 - [ ] Implement automated regression test cases and telemetry monitoring.
 
 ### Phase 3: Feature Expansion & Community Refinements (Upcoming)

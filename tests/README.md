@@ -65,7 +65,7 @@ Coverage includes:
 - Every module SELECT call site, using its C++ SQL text and explicit fixture parameter bindings.
 - Exact-key request deletion leaves unrelated pending requests untouched.
 - A forced mapping failure rolls back the inserted template and retains the pending request.
-- A missing source row cannot insert a mapping or consume pending demand.
+- A missing source row cannot insert a mapping or consume live slots.
 - A second DB invocation preserves committed IDs, values, metadata and pending requests.
 - A missing committed template keeps its mapping and allocator reservation.
 - Source checks for validation-only initialization, request suppression of committed keys, immutable snapshot
@@ -88,9 +88,9 @@ Use an isolated realm with the canonical Playerbot core and mod-playerbots branc
 - [ ] Live mode 1: first dungeon entry prepares eligible exact keys; the first unseen drop awards a scaled entry without another run or restart.
 - [ ] Live mode 2: the first rolled unseen drop is held, then awards a durable scaled entry.
 - [ ] Repeated identical drops and concurrent map workers share one request and ID.
-- [ ] Live disabled: first unseen drop remains original and creates one legacy demand key.
+- [ ] Live disabled (persisted-only mode): first unseen drop remains original; committed variants served from memory; no new demand created.
 - [ ] Simultaneous identical map-worker/player/bot misses: one logical request.
-- [ ] Restart promotes complete staged snapshots with the same IDs and values; legacy completed demand disappears.
+- [ ] Restart promotes complete staged snapshots with the same IDs and values into permanent tables.
 - [ ] Matching post-restart drop selects the exact generated entry.
 - [ ] Same base at two target levels; distinct RequiredLevels stay separate.
 - [ ] ScaleUp, ScaleDown, dynamic and fixed modes; BracketStep and MaxLevel boundaries.
@@ -107,7 +107,7 @@ Use an isolated realm with the canonical Playerbot core and mod-playerbots branc
 - [ ] Inactive generation family: issued template still loads; no regeneration or new selection.
 - [ ] FormulaVersion/generator/PreserveNonZeroStats change retires stale pending requests.
 - [ ] Known family conflict requires FormulaVersion bump without rewriting committed items.
-- [ ] Missing base, startup cap and synthetic-ID exhaustion retain pending demand.
+- [ ] Missing base, startup cap and synthetic-ID exhaustion fail closed and release original loot.
 - [ ] SQL failure, timeout, queue saturation and slot exhaustion release original loot with diagnostics.
 - [ ] Deferred sources cancel on despawn/reset and cannot rewrite active rolls or a new loot generation.
 - [ ] Chest locks, keys and skills remain enforced; pending contents are generated once.

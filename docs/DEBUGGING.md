@@ -37,7 +37,7 @@ When encountering errors, unexpected behavior, or performance drops related to `
 
 ## 3. Module Specific Invariants
 - **Invariant**: Zero blocking DB calls on item tooltip generation or equip hooks.
-- **Invariant**: Item stat modifications must maintain idempotent demand ledgers without permanent DBC corruption.
+- **Invariant**: Item stat modifications must maintain idempotent live SQL persistence without permanent DBC corruption.
 - **Invariant**: Configuration files must never contain duplicate section keys.
 
 ---
