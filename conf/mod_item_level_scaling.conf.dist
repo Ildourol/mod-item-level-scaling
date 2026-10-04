@@ -115,7 +115,7 @@ ItemScaling.MaxLevel = 80
 #                     native reference level matches the scaling target or player level
 #                     (e.g., native 80 to 80, native 70 to 70, native 40 to 40, native 20 to 20).
 #                     Replaces legacy ExcludedLevels with automatic, dynamic native-match detection.
-#                     Works in both Live modes (Mode 1 Prewarm and Mode 2 Drop) as well as offline/legacy mode.
+#                     Works in both Live modes (Mode 1 Prewarm and Mode 2 Drop) and persisted-only mode.
 #        Default:     1 - Enabled (drop original items and skip synthetic generation)
 #                     0 - Disabled (generate synthetic variants even when levels match)
 #
@@ -459,7 +459,7 @@ ItemScaling.BracketStep = 1
 #    ItemScaling.FormulaVersion
 #        Description: Version tag for the scaling curve calculation. Preserved in database records.
 #                     Increment when changing PreserveNonZeroStats or formula input data.
-#                     Pending requests from an obsolete family are retired with a startup warning.
+#                     Previously generated variants keep their stored family metadata; incompatible families are not selected for new scaling.
 #        Default:     1
 #
 

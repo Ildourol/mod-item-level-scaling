@@ -1,6 +1,5 @@
 # Item Level Scaling for AzerothCore
 
-![Item Level Scaling](docs/images/item_scaling_banner.png)
 
 Dynamic dungeon and raid equipment scaling for AzerothCore 3.3.5a.
 
@@ -191,7 +190,7 @@ target = 80
 
 This replaces the old manual `ItemScaling.ExcludedLevels` blacklist. The new behavior is conditional: a native level-70 item can stay untouched for a level-70 player while still scaling for a level-80 player.
 
-It works in Mode 1 prewarm, Mode 2 actual-drop generation, and legacy/offline demand mode.
+It works in Mode 1 prewarm, Mode 2 actual-drop generation, and persisted-only mode.
 
 ## Dynamic floor and ceiling variance
 
@@ -602,23 +601,8 @@ When pulling a newer version:
 
 Do not delete `scaled_item_variant`, the staging tables, or reserved-slot state merely to "reset" the module if players already own generated items. Those tables are part of the persistence contract for permanent synthetic IDs.
 
-## Verification and current engineering status
-
-Repository-side verification includes source-contract checks, SQL/schema tests, target-level regression coverage and documented runtime investigations.
-
-The detailed verification state is intentionally tracked in:
-
-- [tests/README.md](tests/README.md)
-- [docs/ISSUES.md](docs/ISSUES.md)
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-
-Some client-visible and concurrency acceptance checks are tracked separately from source/SQL verification. Consult `docs/ISSUES.md` before treating a newly changed path as fully live-verified.
 
 ## Architecture
-
-For the full lifecycle — startup recovery, reservation ownership, map-worker/world-thread ordering, asynchronous staging, loot deferral, template publication and restart promotion — see:
-
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 The high-level live path is:
 
@@ -675,7 +659,6 @@ Useful checks:
 - confirm `PreserveNativeLoot` if native progression drops should remain untouched;
 - confirm floor/ceiling variance settings and scope;
 - use `.itemscaling preview` on a known item;
-- inspect `docs/ISSUES.md` for known or recently resolved problems.
 
 Verbose calculation logging can be enabled with:
 
