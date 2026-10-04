@@ -214,9 +214,13 @@ public:
         {
             handler->PSendSysMessage("Synthetic Variant Status: |cff00ff00INDEXED IN-MEMORY (ID: {})|r", existingEntry);
         }
+        else if (sItemScalingConfig->LiveEnable)
+        {
+            handler->PSendSysMessage("Synthetic Variant Status: |cffffd100Not ready (will be generated on dungeon entry or actual drop)|r");
+        }
         else
         {
-            handler->PSendSysMessage("Synthetic Variant Status: |cffffd100Not ready (generated on entry/drop in live mode, or next restart in legacy mode)|r");
+            handler->PSendSysMessage("Synthetic Variant Status: |cffff0000Not indexed (live generation disabled; persisted-only mode)|r");
         }
 
         // Armor

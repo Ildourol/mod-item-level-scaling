@@ -317,3 +317,43 @@
   - `tests/test_target_level.cpp` includes unit tests for named pair parsing, positional parsing, deterministic interval rolls, boundary checks, and target level resolution with rolled floor and ceiling variance.
   - `python tests/check_source.py --core "../../Azerothcore server/azerothcore-wotlk"` passes with zero duplicate config keys and all checks green.
   - Maintainer skill validated with code 0 via `quick_validate.py`.
+
+---
+
+<a id="mils-013"></a>
+
+### [MILS-013] Decommission Legacy Demand Ledger in Favor of Pure Live Generation
+
+* **Severity**: Medium (Architectural Simplification & Zero Blocking DB I/O)
+* **Component**: ItemScalingRegistry, ItemScalingConfig, Database Migrations, Live Generation Engine
+* **Status**: **RESOLVED** (2026-10-04)
+* **Affected Files**: [`src/ItemScalingConfig.h`](../src/ItemScalingConfig.h), [`src/ItemScalingConfig.cpp`](../src/ItemScalingConfig.cpp), [`src/ItemScalingRegistry.h`](../src/ItemScalingRegistry.h), [`src/ItemScalingRegistry.cpp`](../src/ItemScalingRegistry.cpp), [`src/ItemScalingLive.h`](../src/ItemScalingLive.h), [`src/ItemScalingLootScript.cpp`](../src/ItemScalingLootScript.cpp), [`src/ItemScalingCommands.cpp`](../src/ItemScalingCommands.cpp), [`conf/mod_item_level_scaling.conf.dist`](../conf/mod_item_level_scaling.conf.dist), [`data/sql/db-world/base/scaled_item_variant.sql`](../data/sql/db-world/base/scaled_item_variant.sql), [`sql/world/base/scaled_item_variant.sql`](../sql/world/base/scaled_item_variant.sql), [`data/sql/db-world/updates/2026_10_05_00_retire_demand_ledger.sql`](../data/sql/db-world/updates/2026_10_05_00_retire_demand_ledger.sql), [`data/sql/db-world/mod_item_level_scaling_readme.sql`](../data/sql/db-world/mod_item_level_scaling_readme.sql), [`tests/check_source.py`](../tests/check_source.py), [`tests/check_sql.py`](../tests/check_sql.py), [`README.md`](../README.md), [`AGENTS.md`](../AGENTS.md), [`docs/ARCHITECTURE.md`](ARCHITECTURE.md), [`docs/plans/no_ledger_live_scaling_plan_final.md`](plans/no_ledger_live_scaling_plan_final.md)
+* **Symptoms & Evidence**:
+  The module previously operated a split architecture between legacy demand ledger materialization at server startup (`scaled_item_variant_request`) and first-run live scaling (`ItemScalingLive`). When players encountered ungenerated scalable items with `ItemScaling.Live.Enable = 0`, requests were queued to a database table to be materialized on the next server reboot. This created architectural dualism, maintenance overhead, dead materializer code paths (`BuildItemTemplateInsertSQL`, `CommitBatch`, `MaterializePendingRequests`), and complex synchronous startup bottlenecks.
+* **Root Cause Analysis**:
+  The demand ledger was originally introduced as a temporary bridge prior to the full implementation of the pure live scaling engine (MILS-004). With the completion of bounded world-thread prewarm (Mode 1), on-demand live generation with async durable staging (Mode 2), publication barriers into pre-allocated `item_template` slots, and startup staging recovery (`RecoverStagedTemplates`), the demand ledger became completely redundant. Furthermore, `_requestedKeys` was previously misunderstood as ledger-only, whereas in reality it served a critical role protecting against duplicate synthetic ID allocation collisions for committed variants.
+* **Resolution**:
+  1. **Purged Legacy Demand Ledger**:
+     - Removed `ItemScaling.DemandLedger.Enable` and `ItemScaling.MaxNewVariantsPerStartup` from `conf/mod_item_level_scaling.conf.dist`, `ItemScalingConfig.h`, and `ItemScalingConfig.cpp`. Documented `ItemScaling.Live.Enable = 0` as pure persisted-only mode (serves existing variants from in-memory index; unseen items drop native Blizzard template).
+     - Removed `MaterializePendingRequests`, `QueueVariantRequest`, `BuildItemTemplateInsertSQL`, `CommitBatch`, `VariantInsert`, `DeleteRequest`, `DeleteCompletedRequest`, and dead helper types from `ItemScalingRegistry.h` and `ItemScalingRegistry.cpp`.
+     - Removed `_requestMutex` and `<mutex>` from `ItemScalingRegistry`.
+  2. **Retained & Renamed Collision Protection**:
+     - Renamed `_requestedKeys` to `_committedKeys`. Populated during `ItemScalingRegistry::Initialize()` from `scaled_item_variant` records (including invalid/unusable variants).
+     - Made `_committedKeys` strictly immutable after initialization, providing lock-free O(1) protection against duplicate synthetic ID allocation collisions in `FindOrRequestVariant`.
+  3. **Strict Two-InnoDB Schema Invariants**:
+     - Modernized `ItemScalingRegistry::EnsureSchema()` and `ValidateSchema()` to strictly require exactly two InnoDB tables (`item_template` and `scaled_item_variant`).
+     - Removed `scaled_item_variant_request` table definitions from `base/scaled_item_variant.sql` in both `data/sql/db-world/base/` and `sql/world/base/`.
+     - Added idempotent retirement migration `data/sql/db-world/updates/2026_10_05_00_retire_demand_ledger.sql` (`DROP TABLE IF EXISTS scaled_item_variant_request;`). Preserved historical initial migration `2026_09_27_00_item_scaling_initial_schema.sql` intact for schema history.
+  4. **Enforced Startup Synchronization Order**:
+     - `ItemScalingRegistry::_dbSynchronized` is set to `true` strictly after `sItemScalingLive->ReserveSlots()` completes successfully.
+  5. **Cleaned Command & Script References**:
+     - Updated `.itemscaling preview` in `ItemScalingCommands.cpp` to accurately distinguish between indexed in-memory variants, live on-demand generation, and persisted-only mode.
+     - Updated comments in `ItemScalingLive.h` and `ItemScalingLootScript.cpp`.
+* **Regression Guard**:
+  - `tests/check_source.py --core "../../Azerothcore server/azerothcore-wotlk"` passes with code 0, verifying 0 active ledger symbols, 0 duplicate config keys, packet API hooks, publication barriers, and `_committedKeys` collision guards.
+  - `tests/check_sql.py --core "../../Azerothcore server/azerothcore-wotlk" --mariadbd "../../Azerothcore server/mini sql/bin/mysqld.exe"` passes 100% with code 0, validating:
+    - 3-state install/upgrade compatibility matrix: State A (fresh install), State B (existing empty request table), State C (existing install with pending requests dropped cleanly).
+    - Non-interference assertions: `scaled_item_variant`, `item_template`, and all three live staging tables (`mod_item_level_scaling_slot`, `mod_item_level_scaling_staged_item`, `mod_item_level_scaling_staged_variant`) remain strictly untouched.
+    - All 25 module `SELECT` call sites execute cleanly.
+    - Atomic promotion and restart persistence across database restart.
+  - Maintainer skill validated via `quick_validate.py` with code 0.

@@ -216,12 +216,16 @@ ItemScaling.ScaleHeirloom = 0
 
 ItemScaling.RandomSuffix.Mode = 0
 
-# First-run hybrid generation. No core, Playerbots or client patches are required.
-# All Live.* settings are startup-only. Enable=0 restores the legacy demand ledger.
-# 1: prepare exact variants during the first dungeon/raid visit (default).
-# 2: request only items that actually roll; first-time loot waits for SQL acknowledgement.
+# Pure Live Generation Architecture. No core, Playerbots or client patches are required.
+# All Live.* settings are startup-only.
+#   ItemScaling.Live.Enable = 1 (Default): Pure Live Generation active.
+#       Hybrid Mode 1: bounded world-update prewarm on instance entry + on-demand async generation on actual drop.
+#       Mode 2: on-demand async generation on actual drop only.
+#   ItemScaling.Live.Enable = 0: Persisted-variants-only mode.
+#       Serves existing variants already present in scaled_item_variant. Unseen variants remain original Blizzard items.
+#       No runtime generation, no background queueing, and no loot deferral wait.
 # Both modes defer an unexpected miss and preserve original loot on failure/timeout.
-# SQL staging stores complete snapshots before award; next startup promotes them.
+# SQL staging stores complete snapshots before award; next startup promotes them to permanent tables.
 ItemScaling.Live.Enable = 1
 ItemScaling.Live.GenerationMode = 1
 
@@ -437,16 +441,6 @@ ItemScaling.SyntheticEntry.Start = "auto"
 
 ItemScaling.SyntheticEntry.AutoOffset = 1000
 
-#
-#    ItemScaling.DemandLedger.Enable
-#        Description: Legacy mode (Live.Enable=0): record exact gameplay requests asynchronously
-#                     and materialize them next startup. First unseen combinations remain original.
-#                     With Live.Enable=1, live requests use durable staging independently of this option.
-#        Default:     1 - Record and materialize demand
-#                     0 - Existing persisted variants only
-#
-
-ItemScaling.DemandLedger.Enable = 1
 
 #
 #    ItemScaling.BracketStep
@@ -495,10 +489,6 @@ ItemScaling.ExcludedItemIds = ""
 #
 
 ItemScaling.Debug = 0
-
-# Maximum new templates per startup (1..250000). Existing templates do not count toward this limit.
-# Maximum pending requested variants materialized per startup; excess demand waits for later restarts.
-ItemScaling.MaxNewVariantsPerStartup = 25000
 
 # Highest ID the module may allocate (60000..10000000).
 # Recovery preserves issued IDs even above a newly lowered allocation limit.

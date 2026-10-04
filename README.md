@@ -345,7 +345,6 @@ The world database uses:
 |---|---|
 | `item_template` | Base items, permanent scaled variants, and unused reserved placeholders |
 | `scaled_item_variant` | Permanent exact variant keys, identity data and generated-entry mapping |
-| `scaled_item_variant_request` | Legacy demand-ledger requests |
 | `mod_item_level_scaling_slot` | Reserved live entry ownership |
 | `mod_item_level_scaling_staged_item` | Complete staged item snapshots |
 | `mod_item_level_scaling_staged_variant` | Staged exact-key mappings awaiting startup promotion |
@@ -358,21 +357,15 @@ Recovery also runs when item scaling itself is disabled, because already-issued 
 
 The live staging/promotion tables require InnoDB semantics.
 
-## Legacy demand-ledger mode
+## Persisted-only mode (`Live.Enable = 0`)
 
-To disable first-run live generation:
+To disable dynamic live generation:
 
 ```ini
 ItemScaling.Live.Enable = 0
 ```
 
-The legacy demand ledger can then record unseen requests:
-
-```ini
-ItemScaling.DemandLedger.Enable = 1
-```
-
-In legacy mode, an unseen combination drops as the original item and is materialized during a later startup. Existing permanent variants remain usable.
+In persisted-only mode, the module serves previously generated and committed variants directly from in-memory index (`_keyToEntry`) without database round-trips. Unseen item/level combinations drop as their original native item template and no new synthetic variants are generated or queued. All legacy demand-ledger mechanisms have been completely retired.
 
 ## Random properties and suffixes
 
@@ -556,9 +549,6 @@ ItemScaling.RequiredLevel.Policy = "target"
 ItemScaling.UseAutoBalanceSettings = 0
 ItemScaling.Announce = 1
 ItemScaling.BracketStep = 1
-
-# Used for new requests when Live.Enable=0
-ItemScaling.DemandLedger.Enable = 1
 ```
 
 See the complete documented template:
@@ -593,6 +583,7 @@ World SQL currently includes:
 
 - [initial schema](data/sql/db-world/updates/2026_09_27_00_item_scaling_initial_schema.sql)
 - [live staging migration](data/sql/db-world/updates/2026_10_04_00_item_scaling_live.sql)
+- [retire demand ledger migration](data/sql/db-world/updates/2026_10_05_00_retire_demand_ledger.sql)
 
 The module also contains runtime schema safeguards for its required tables and legacy column upgrades. Database migrations remain the authoritative deployment path.
 

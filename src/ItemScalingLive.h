@@ -28,7 +28,7 @@ public:
     ~ItemScalingLive();
 
     bool RecoverStagedTemplates(); // startup, before ObjectMgr loads items
-    bool ReserveSlots();          // startup, after legacy demand materialization
+    bool ReserveSlots();          // startup, pre-allocates live generation template slots
     void Initialize();
     void Update(uint32 diff);
     void IncludeOwnedEntries(std::unordered_set<uint32>& entries) const;

@@ -1,24 +1,21 @@
 -- mod-item-level-scaling database integration
 --
--- This module uses a hybrid live-snapshot and legacy demand ledger architecture.
+-- This module uses a pure live generation architecture with durable staging and startup promotion.
 -- Tables:
 --   1. `scaled_item_variant`: stores permanent synthetic item entries and validated template identities.
---   2. `scaled_item_variant_request`: stores exact gameplay demand requests pending startup materialization.
+--   2. `mod_item_level_scaling_slot`: inert reserved IDs and durable assignment state.
+--   3. `mod_item_level_scaling_staged_item`: complete saved RAM-template snapshots.
+--   4. `mod_item_level_scaling_staged_variant`: exact keys awaiting atomic startup promotion.
 --
 -- Requirements:
---   - InnoDB storage engine is strictly required for transactional atomicity during startup materialization.
+--   - InnoDB storage engine is strictly required for transactional atomicity during live staging and startup promotion.
 --   - Character encoding utf8mb4 with utf8mb4_unicode_ci collation.
---   - Synthetic items are materialized into `item_template` transactionally during OnLoadCustomDatabaseTable.
+--   - Pre-allocated placeholder slots are reserved in `item_template` and promoted permanently on subsequent server startup.
 --
 -- File locations:
 --   - Base schema: data/sql/db-world/base/scaled_item_variant.sql (mirrored at sql/world/base/scaled_item_variant.sql)
 --   - Initial schema update: data/sql/db-world/updates/2026_09_27_00_item_scaling_initial_schema.sql
+--   - Live staging schema update: data/sql/db-world/updates/2026_10_04_00_item_scaling_live.sql
+--   - Ledger retirement update: data/sql/db-world/updates/2026_10_05_00_retire_demand_ledger.sql
 --
--- Keep this file so DB import pipelines and db_assembler can detect module SQL presence and documentation.
-
--- Live tables:
---   - mod_item_level_scaling_slot: inert reserved IDs and durable assignment state.
---   - mod_item_level_scaling_staged_item: complete saved RAM-template snapshots.
---   - mod_item_level_scaling_staged_variant: exact keys awaiting atomic startup promotion.
--- Migration: data/sql/db-world/updates/2026_10_04_00_item_scaling_live.sql
 -- Publication waits for async commit acknowledgement; startup preserves its ID and values.

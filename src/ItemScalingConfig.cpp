@@ -32,15 +32,14 @@ void ItemScalingConfig::Load(bool reload)
             LOG_WARN("module.ItemScaling", "ItemScaling: Live.* settings require restart; active values retained.");
         uint8 newFormula = static_cast<uint8>(std::clamp<uint32>(
             sConfigMgr->GetOption<uint32>("ItemScaling.FormulaVersion", 1), 1, 255));
-        bool newDemand = sConfigMgr->GetOption<bool>("ItemScaling.DemandLedger.Enable", true);
         bool newPreserve = sConfigMgr->GetOption<bool>("ItemScaling.PreserveNonZeroStats", true);
         uint32 newRandomMode = sConfigMgr->GetOption<uint32>("ItemScaling.RandomSuffix.Mode", 0);
         RandomSuffixScalingMode expectedRandomMode = (newRandomMode == 1) ? RandomSuffixScalingMode::Bake : RandomSuffixScalingMode::Skip;
 
-        if (newFormula != FormulaVersion || newDemand != DemandLedgerEnable || newPreserve != PreserveNonZeroStats || expectedRandomMode != RandomSuffixMode)
+        if (newFormula != FormulaVersion || newPreserve != PreserveNonZeroStats || expectedRandomMode != RandomSuffixMode)
         {
             LOG_WARN("module.ItemScaling",
-                "ItemScaling: Schema invariant options (FormulaVersion, PreserveNonZeroStats, DemandLedger.Enable, RandomSuffix.Mode) "
+                "ItemScaling: Schema invariant options (FormulaVersion, PreserveNonZeroStats, RandomSuffix.Mode) "
                 "cannot be changed live and require a worldserver restart. Current persistent invariants remain active.");
         }
     }
@@ -309,9 +308,6 @@ void ItemScalingConfig::Load(bool reload)
         }
 
         SyntheticEntryAutoOffset = sConfigMgr->GetOption<uint32>("ItemScaling.SyntheticEntry.AutoOffset", 1000);
-        DemandLedgerEnable = sConfigMgr->GetOption<bool>("ItemScaling.DemandLedger.Enable", true);
-        MaxNewVariantsPerStartup = std::clamp<uint32>(
-            sConfigMgr->GetOption<uint32>("ItemScaling.MaxNewVariantsPerStartup", 25000), 1, 250000);
         SyntheticEntryMaximum = std::clamp<uint32>(
             sConfigMgr->GetOption<uint32>("ItemScaling.SyntheticEntry.Maximum", 2000000), 60000, 10000000);
         FormulaVersion = static_cast<uint8>(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("ItemScaling.FormulaVersion", 1), 1, 255));

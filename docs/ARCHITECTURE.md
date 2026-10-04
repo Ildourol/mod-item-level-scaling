@@ -4,7 +4,7 @@ The accepted [first-run hybrid plan](plans/first_run_item_scaling_hybrid_plan.md
 
 ## Startup lifecycle
 
-`OnLoadCustomDatabaseTable` executes before ObjectMgr loads items. The registry creates and validates its schema, recovers live snapshots, handles existing legacy demand, then tops up inert reserved rows. Startup SQL may block here because players cannot log in yet.
+`OnLoadCustomDatabaseTable` executes before ObjectMgr loads items. The registry creates and validates its schema, recovers live snapshots, validates persistent invariants, then tops up inert reserved rows. Startup SQL may block here because players cannot log in yet.
 
 Recovery verifies InnoDB, matching snapshot column order/types/nullability, and one complete staged item/mapping/assigned reservation per ID. A single transaction replaces owned placeholders, inserts permanent mappings and removes the completed staging records and reservations. It preserves saved values even if base stats or configuration have changed. Corrupt recovery stops startup. Old issued generator families are retained unchanged.
 
@@ -82,7 +82,7 @@ flowchart TD
    - Prior to allocating `Loot preview` structs or invoking `PrepareLoot`, catalogue prewarm resolves the source's target levels using `ItemScalingLootScript::ResolveTargetLevels`. Items matching native reference levels are skipped immediately, conserving per-tick prewarm budget and preventing phantom variant generation.
 4. **Mode 2 & Non-Live / Offline Mode**:
    - Rolled items matching native reference levels return immediately from `scaleLootItem`, dropping original Blizzard items natively.
-   - `ItemScalingRegistry::FindOrRequestVariant` enforces a defense-in-depth bypass, guaranteeing that when `ItemScaling.Live.Enable = 0` (or `DemandLedger.Enable = 0`), no demand rows are inserted into `scaled_item_variant_request`.
+   - `ItemScalingRegistry::FindOrRequestVariant` enforces a defense-in-depth bypass, guaranteeing that when `ItemScaling.Live.Enable = 0`, no new variants are generated and original Blizzard items drop natively.
 5. **Replacement of `ExcludedLevels`**:
    - Replaces the legacy manual `ItemScaling.ExcludedLevels` blacklist with dynamic, intrinsic native-match preservation.
 

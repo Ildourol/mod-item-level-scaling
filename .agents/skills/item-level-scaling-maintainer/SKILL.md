@@ -9,14 +9,14 @@ This skill provides operational workflows, engineering checklists, and diagnosti
 
 ## Core Responsibilities
 - **Component**: Item Level Scaling & Dynamic Stats
-- **Description**: Dynamically scales item stats, armor, spell power, and weapon damage based on player level, demand ledgers, and dungeon brackets.
+- **Description**: Dynamically scales item stats, armor, spell power, and weapon damage based on player level, live generation, and dungeon brackets.
 - **Target Platform**: AzerothCore (WotLK 3.3.5a, Build 12340, C++17)
 
 ---
 
 ## Architectural Invariants
 - Zero blocking DB calls on item tooltip generation or equip hooks.
-- Item stat modifications must maintain idempotent demand ledgers without permanent DBC corruption.
+- Item stat modifications must maintain idempotent live SQL persistence without permanent DBC corruption.
 - Configuration files must never contain duplicate section keys.
 - **Single Server Runtime Authority**: The single active server runtime is strictly located at `Server/bin/`. All binary builds and module configs must target `Server/bin/`.
 - **Zero Blocking I/O**: The AzerothCore world loop is sacred. Never add blocking I/O, sleep loops, or external synchronous network requests to the world thread.

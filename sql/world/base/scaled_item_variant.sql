@@ -32,32 +32,3 @@ CREATE TABLE IF NOT EXISTS `scaled_item_variant` (
         `random_property_id`
     )
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Persisted scaled item variants';
-
--- Pending requests have no allocated synthetic entry.
-CREATE TABLE IF NOT EXISTS `scaled_item_variant_request` (
-    `base_entry` INT UNSIGNED NOT NULL,
-    `target_effective_level` TINYINT UNSIGNED NOT NULL,
-    `target_item_level` SMALLINT UNSIGNED NOT NULL,
-    `formula_version` TINYINT UNSIGNED NOT NULL,
-    `generator_revision` TINYINT UNSIGNED NOT NULL,
-    `required_level` TINYINT UNSIGNED NOT NULL,
-    `random_property_id` INT NOT NULL DEFAULT 0,
-    `base_class` TINYINT UNSIGNED NOT NULL,
-    `base_subclass` TINYINT UNSIGNED NOT NULL,
-    `base_sound_override_subclass` TINYINT NOT NULL,
-    `base_material` TINYINT NOT NULL,
-    `base_displayid` INT UNSIGNED NOT NULL,
-    `base_inventory_type` TINYINT UNSIGNED NOT NULL,
-    `base_sheath` TINYINT UNSIGNED NOT NULL,
-    `preserve_nonzero_stats` TINYINT UNSIGNED NOT NULL,
-    `requested_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (
-        `base_entry`,
-        `target_effective_level`,
-        `target_item_level`,
-        `formula_version`,
-        `generator_revision`,
-        `required_level`,
-        `random_property_id`
-    )
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Exact gameplay scaling demand';

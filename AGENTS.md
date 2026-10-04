@@ -1,4 +1,4 @@
-﻿# AI Agent Operating Guidelines: `mod-item-level-scaling`
+# AI Agent Operating Guidelines: `mod-item-level-scaling`
 
 Welcome to `mod-item-level-scaling`. This document defines the strict architectural boundaries, C++ threading invariants, database conventions, and code patterns required when modifying or extending this repository.
 
@@ -24,7 +24,7 @@ Welcome to `mod-item-level-scaling`. This document defines the strict architectu
 
 ### D. Module Specific Invariants
 * **Zero blocking DB calls on item tooltip generation or equip hooks.**: Zero blocking DB calls on item tooltip generation or equip hooks.
-* **Item stat modifications must maintain idempotent demand ledgers without permanent DBC corruption.**: Item stat modifications must maintain idempotent demand ledgers without permanent DBC corruption.
+* **Item stat modifications must maintain idempotent live SQL persistence without permanent DBC corruption.**: Item stat modifications must maintain idempotent live SQL persistence without permanent DBC corruption.
 * **Configuration files must never contain duplicate section keys.**: Configuration files must never contain duplicate section keys.
 
 ### E. Single Server Runtime Authority & Binary Path Invariant

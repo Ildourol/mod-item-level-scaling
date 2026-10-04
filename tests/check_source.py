@@ -70,10 +70,32 @@ assert dict(options)['ItemScaling.Dynamic.Ceiling.HeroicRaids'].strip() == '0'
 assert dict(options)['ItemScaling.Dynamic.Floor.HeroicRaids'].strip() == '3'
 assert 'ItemScaling.ExcludedLevels' not in dict(options), 'ItemScaling.ExcludedLevels should be removed'
 assert dict(options)['ItemScaling.PreserveNativeLoot'].strip() == '1'
+assert 'ItemScaling.DemandLedger.Enable' not in dict(options), 'DemandLedger.Enable should be removed from config'
+assert 'ItemScaling.MaxNewVariantsPerStartup' not in dict(options), 'MaxNewVariantsPerStartup should be removed from config'
 
 for sql in (module / 'data/sql').rglob('*.sql'):
     assert not re.search(r'ALTER TABLE[^;]*\b(?:ADD COLUMN IF NOT EXISTS|DROP KEY IF EXISTS)\b', sql.read_text(), re.I)
 registry = (module / 'src/ItemScalingRegistry.cpp').read_text()
 assert 'ADD COLUMN IF NOT EXISTS `' not in registry and 'DROP KEY IF EXISTS `' not in registry
-print('PASS: native tooltip field coverage, publication barrier, packet API, asynchronous gameplay paths, config and MySQL syntax guards')
+
+# Zero active demand ledger references in active source, config, and base SQL schemas
+active_files = list((module / 'src').glob('*.*')) + [
+    module / 'conf/mod_item_level_scaling.conf.dist',
+    module / 'data/sql/db-world/base/scaled_item_variant.sql',
+    module / 'sql/world/base/scaled_item_variant.sql',
+]
+for path in active_files:
+    content = path.read_text()
+    assert 'scaled_item_variant_request' not in content, f'Active file {path.name} contains scaled_item_variant_request'
+    assert 'MaterializePendingRequests' not in content, f'Active file {path.name} contains MaterializePendingRequests'
+    assert 'DemandLedger' not in content, f'Active file {path.name} contains DemandLedger'
+
+# Collision guard and synchronization ordering checks in registry
+assert '_committedKeys.insert(key)' in registry
+assert 'if (_committedKeys.count(key))' in registry
+assert '_requestedKeys' not in registry
+assert '_requestMutex' not in registry
+assert 'sItemScalingLive->ReserveSlots()' in registry
+
+print('PASS: native tooltip field coverage, publication barrier, packet API, asynchronous gameplay paths, pure live config, zero active ledger symbols, and MySQL syntax guards')
 print('NOT VERIFIED: C++ compilation, concurrent runtime behavior, first-run loot and client rendering')

@@ -140,8 +140,6 @@ public:
     bool AutoSyntheticEntry{true};
     uint32 SyntheticEntryStart{60000};
     uint32 SyntheticEntryAutoOffset{1000};
-    bool DemandLedgerEnable{true};
-    uint32 MaxNewVariantsPerStartup{25000};
     uint32 SyntheticEntryMaximum{2000000};
     uint8 BracketStep{1};
     uint8 FormulaVersion{1};

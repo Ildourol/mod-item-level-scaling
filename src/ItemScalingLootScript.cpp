@@ -597,7 +597,7 @@ void ItemScalingLootScript::PrepareLoot(Loot* loot, LootStore const& store, Play
                 return;
         }
 
-        // A live miss is held until its durable template is published; legacy mode queues demand.
+        // A live miss triggers asynchronous generation; loot is deferred until the durable template is published.
         uint32 variantEntry = sItemScalingRegistry->FindOrRequestVariant(
             baseProto,
             effectiveTarget,
