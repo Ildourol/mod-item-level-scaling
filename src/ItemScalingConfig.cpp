@@ -7,6 +7,7 @@
 #include "Tokenize.h"
 #include "StringConvert.h"
 #include "Log.h"
+#include "Map.h"
 #include <string_view>
 #include <algorithm>
 
@@ -100,12 +101,21 @@ void ItemScalingConfig::Load(bool reload)
         ReqLevelPolicy = REQ_POLICY_TARGET_CAPPED_PLAYER;
     }
 
-    DynamicFloorDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Dungeons", 5)));
-    DynamicCeilingDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Dungeons", 3)));
-    DynamicFloorRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Raids", 5)));
+    DynamicCeilingDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Dungeons", 5)));
+    DynamicFloorDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Dungeons", 3)));
     DynamicCeilingRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Raids", 3)));
+    DynamicFloorRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Raids", 0)));
 
-    UseAutoBalanceSettings = sConfigMgr->GetOption<bool>("ItemScaling.UseAutoBalanceSettings", true);
+    DynamicCeilingHeroicDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.HeroicDungeons", 5)));
+    DynamicFloorHeroicDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.HeroicDungeons", 0)));
+
+    DynamicCeilingHeroicDungeonsTBC = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.HeroicDungeons.TBC", DynamicCeilingHeroicDungeons)));
+    DynamicFloorHeroicDungeonsTBC = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.HeroicDungeons.TBC", DynamicFloorHeroicDungeons)));
+
+    DynamicCeilingHeroicDungeonsWrath = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.HeroicDungeons.Wrath", DynamicCeilingHeroicDungeons)));
+    DynamicFloorHeroicDungeonsWrath = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.HeroicDungeons.Wrath", DynamicFloorHeroicDungeons)));
+
+    UseAutoBalanceSettings = sConfigMgr->GetOption<bool>("ItemScaling.UseAutoBalanceSettings", false);
     if (UseAutoBalanceSettings)
     {
         std::string abMethod = sConfigMgr->GetOption<std::string>("AutoBalance.LevelScaling.Method", "", false);
@@ -205,6 +215,7 @@ void ItemScalingConfig::Load(bool reload)
     }
 
     Debug = sConfigMgr->GetOption<bool>("ItemScaling.Debug", false);
+    Announce = sConfigMgr->GetOption<bool>("ItemScaling.Announce", true);
 }
 
 bool ItemScalingConfig::IsQualityEnabled(uint32 quality) const
@@ -247,12 +258,66 @@ bool ItemScalingConfig::IsItemExcluded(uint32 itemId) const
     return ExcludedItemIds.find(itemId) != ExcludedItemIds.end();
 }
 
-uint8 ItemScalingConfig::GetDynamicFloor(bool isRaid) const
+uint8 ItemScalingConfig::GetDynamicFloor(bool isRaid, bool isHeroic, uint32 expansion) const
 {
-    return isRaid ? DynamicFloorRaids : DynamicFloorDungeons;
+    if (isRaid)
+    {
+        return DynamicFloorRaids;
+    }
+
+    // Heroics are strictly supported for TBC (expansion 1) and Wrath (expansion 2).
+    // Vanilla (expansion 0) does not have native heroics; fallback to standard dungeon rules.
+    if (isHeroic && expansion > 0)
+    {
+        if (expansion == 1)
+            return DynamicFloorHeroicDungeonsTBC;
+        if (expansion == 2)
+            return DynamicFloorHeroicDungeonsWrath;
+        return DynamicFloorHeroicDungeons;
+    }
+
+    return DynamicFloorDungeons;
 }
 
-uint8 ItemScalingConfig::GetDynamicCeiling(bool isRaid) const
+uint8 ItemScalingConfig::GetDynamicCeiling(bool isRaid, bool isHeroic, uint32 expansion) const
 {
-    return isRaid ? DynamicCeilingRaids : DynamicCeilingDungeons;
+    if (isRaid)
+    {
+        return DynamicCeilingRaids;
+    }
+
+    // Heroics are strictly supported for TBC (expansion 1) and Wrath (expansion 2).
+    // Vanilla (expansion 0) does not have native heroics; fallback to standard dungeon rules.
+    if (isHeroic && expansion > 0)
+    {
+        if (expansion == 1)
+            return DynamicCeilingHeroicDungeonsTBC;
+        if (expansion == 2)
+            return DynamicCeilingHeroicDungeonsWrath;
+        return DynamicCeilingHeroicDungeons;
+    }
+
+    return DynamicCeilingDungeons;
+}
+
+uint8 ItemScalingConfig::GetDynamicFloor(Map const* map) const
+{
+    if (!map)
+        return DynamicFloorDungeons;
+
+    bool isRaid = map->IsRaid();
+    bool isHeroic = map->IsHeroic();
+    uint32 expansion = map->GetEntry() ? map->GetEntry()->Expansion() : 0;
+    return GetDynamicFloor(isRaid, isHeroic, expansion);
+}
+
+uint8 ItemScalingConfig::GetDynamicCeiling(Map const* map) const
+{
+    if (!map)
+        return DynamicCeilingDungeons;
+
+    bool isRaid = map->IsRaid();
+    bool isHeroic = map->IsHeroic();
+    uint32 expansion = map->GetEntry() ? map->GetEntry()->Expansion() : 0;
+    return GetDynamicCeiling(isRaid, isHeroic, expansion);
 }

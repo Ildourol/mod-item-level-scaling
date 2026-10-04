@@ -209,6 +209,17 @@ ItemScaling.Live.MaxPublishPerTick = 64
 ItemScaling.Live.LootWaitTimeoutMs = 10000
 
 #
+#    ItemScaling.Announce
+#        Description: Whether to send system chat messages when entering a dungeon/raid indicating the
+#                     scaling target level, and broadcasting when a higher-level player joins and triggers
+#                     a loot scaling recalculation.
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+
+ItemScaling.Announce = 1
+
+#
 #    ItemScaling.PreserveNonZeroStats
 #        Description: Prevents non-zero stats from vanishing purely due to rounding to 0 at low levels.
 #                     If an item originally has +5 Haste, scaled version will have at least +1 Haste.
@@ -237,20 +248,37 @@ ItemScaling.RequiredLevel.Policy = "target"
 #                     Ceiling: levels above H (e.g. 3 means boss scales up to at most H + 3)
 #
 
-ItemScaling.Dynamic.Floor.Dungeons = 5
-ItemScaling.Dynamic.Ceiling.Dungeons = 3
-ItemScaling.Dynamic.Floor.Raids = 5
+ItemScaling.Dynamic.Ceiling.Dungeons = 5
+ItemScaling.Dynamic.Floor.Dungeons = 3
 ItemScaling.Dynamic.Ceiling.Raids = 3
+ItemScaling.Dynamic.Floor.Raids = 0
+
+#
+#    Dynamic Scaling for Heroic Dungeons (TBC & Wrath)
+#        Description: Fine-grained ceiling and floor configuration for 5-player Heroic dungeons.
+#                     Vanilla (Classic) dungeons do not have heroic difficulties, so heroic options are
+#                     disabled/bypassed for Vanilla and will use normal dungeon floor/ceiling.
+#                     TBC: The Burning Crusade heroic dungeons (expansion 1)
+#                     Wrath: Wrath of the Lich King heroic dungeons (expansion 2)
+#                     HeroicDungeons serves as the general fallback for custom/other heroic dungeons.
+#
+
+ItemScaling.Dynamic.Ceiling.HeroicDungeons = 5
+ItemScaling.Dynamic.Floor.HeroicDungeons = 0
+ItemScaling.Dynamic.Ceiling.HeroicDungeons.TBC = 5
+ItemScaling.Dynamic.Floor.HeroicDungeons.TBC = 0
+ItemScaling.Dynamic.Ceiling.HeroicDungeons.Wrath = 5
+ItemScaling.Dynamic.Floor.HeroicDungeons.Wrath = 0
 
 #
 #    ItemScaling.UseAutoBalanceSettings
 #        Description: If mod-autobalance is loaded, automatically adopt its configured LevelScaling.Method,
 #                     Dynamic.Floor, and Dynamic.Ceiling settings for instance types.
-#        Default:     1 - Enabled
-#                     0 - Disabled (use ItemScaling.* config values exclusively)
+#        Default:     0 - Disabled (strictly use ItemScaling.* config values exclusively)
+#                     1 - Enabled (adopt AutoBalance values)
 #
 
-ItemScaling.UseAutoBalanceSettings = 1
+ItemScaling.UseAutoBalanceSettings = 0
 
 #
 #    ItemScaling.SyntheticEntry.Start

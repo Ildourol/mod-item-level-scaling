@@ -141,6 +141,7 @@ struct ItemScalingLive::Impl
         std::size_t sourceIndex{0};
         std::size_t itemIndex{0};
         std::size_t rollIndex{0};
+        uint8 announcedLevel{0};
     };
 
     mutable std::mutex mutex;
@@ -416,12 +417,108 @@ void ItemScalingLive::TrackLoot(Loot const& loot, Player const& owner, std::size
     it->second.items.push_back({index, item.itemid, item.count, item.randomPropertyId, item.randomSuffix, key});
 }
 
-void ItemScalingLive::EnterMap(Map const& map)
+void ItemScalingLive::EnterMap(Map const& map, Player* player)
 {
-    if (!map.IsDungeon() || map.IsBattlegroundOrArena() || sItemScalingConfig->LiveGenerationMode != 1)
+    if (!sItemScalingConfig->Enable || !map.IsDungeon() || map.IsBattlegroundOrArena() ||
+        sItemScalingConfig->IsMapExcluded(map.GetId()))
         return;
-    std::lock_guard<std::mutex> lock(_impl->mutex);
-    _impl->visits.try_emplace(std::make_pair(map.GetId(), map.GetInstanceId()));
+
+    auto key = std::make_pair(map.GetId(), map.GetInstanceId());
+    uint8 highestLevel = 0;
+    std::string highestPlayerName;
+    Player* owner = ItemScalingLootScript::GetEligibleOwner(&map);
+    if (owner)
+    {
+        highestLevel = owner->GetLevel();
+        highestPlayerName = owner->GetName();
+    }
+
+    bool shouldAnnounceEntry = false;
+    bool shouldAnnounceRecalc = false;
+
+    if (sItemScalingConfig->LiveGenerationMode == 1)
+    {
+        std::lock_guard<std::mutex> lock(_impl->mutex);
+        auto [it, inserted] = _impl->visits.try_emplace(key, Impl::Visit{});
+        auto& visit = it->second;
+
+        if (highestLevel > 0)
+        {
+            if (visit.announcedLevel == 0)
+            {
+                visit.announcedLevel = highestLevel;
+                visit.level = highestLevel;
+                visit.revision = sItemScalingConfig->Revision;
+                shouldAnnounceEntry = true;
+            }
+            else if (highestLevel > visit.announcedLevel)
+            {
+                visit.announcedLevel = highestLevel;
+                visit.level = highestLevel;
+                visit.revision = sItemScalingConfig->Revision;
+                visit.sourceIndex = 0;
+                visit.itemIndex = 0;
+                visit.rollIndex = 0;
+                shouldAnnounceRecalc = true;
+            }
+            else if (player && sItemScalingConfig->Announce)
+            {
+                shouldAnnounceEntry = true;
+            }
+        }
+    }
+
+    if (sItemScalingConfig->Announce && highestLevel > 0)
+    {
+        char const* rawMapName = map.GetMapName();
+        std::string mapName = rawMapName ? rawMapName : "Instance";
+        if (map.IsHeroic())
+        {
+            uint32 expansion = map.GetEntry() ? map.GetEntry()->Expansion() : 0;
+            if (map.IsRaid())
+            {
+                mapName = Acore::StringFormat("Heroic %s", rawMapName ? rawMapName : "Raid");
+            }
+            else if (expansion == 1)
+            {
+                mapName = Acore::StringFormat("Heroic %s (TBC)", rawMapName ? rawMapName : "Dungeon");
+            }
+            else if (expansion == 2)
+            {
+                mapName = Acore::StringFormat("Heroic %s (Wrath)", rawMapName ? rawMapName : "Dungeon");
+            }
+            else
+            {
+                mapName = Acore::StringFormat("Heroic %s", rawMapName ? rawMapName : "Dungeon");
+            }
+        }
+
+        if (shouldAnnounceRecalc)
+        {
+            std::string msg = Acore::StringFormat(
+                "|cff00ccff[ItemScaling]|r Higher-level player %s (level %u) entered %s! Instance loot scaling recalculated to level %u.",
+                highestPlayerName, highestLevel, mapName.c_str(), highestLevel);
+
+            for (auto const& ref : map.GetPlayers())
+            {
+                if (Player* p = ref.GetSource())
+                {
+                    if (p->IsInWorld() && p->GetSession())
+                    {
+                        ChatHandler(p->GetSession()).SendSysMessage(msg.c_str());
+                    }
+                }
+            }
+        }
+        else if (shouldAnnounceEntry && player && player->IsInWorld() && player->GetSession())
+        {
+            std::string msg = Acore::StringFormat(
+                "|cff00ccff[ItemScaling]|r Entering %s: Loot scaling active for level %u (highest player: %s).",
+                mapName.c_str(), highestLevel, highestPlayerName);
+
+            ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
+        }
+    }
 }
 
 void ItemScalingLive::CancelSource(uint32 map, uint32 instance, ObjectGuid source)
@@ -561,8 +658,9 @@ bool ItemScalingLive::Impl::LoadCatalogue()
                 continue;
             for (auto [item, reference] : it->second)
             {
-                if (reference > 0 && seen.insert(static_cast<uint32>(reference)).second)
-                    stack.emplace_back(&references, static_cast<uint32>(reference));
+                uint32 refId = static_cast<uint32>(std::abs(reference));
+                if (refId != 0 && seen.insert(refId).second)
+                    stack.emplace_back(&references, refId);
                 else if (reference == 0 && item)
                     items.insert(item);
             }
@@ -570,9 +668,7 @@ bool ItemScalingLive::Impl::LoadCatalogue()
         return std::vector<uint32>(items.begin(), items.end());
     };
     QueryResult creatures = WorldDatabase.Query(
-        "SELECT DISTINCT map,id1 FROM creature WHERE id1<>0 UNION "
-        "SELECT DISTINCT map,id2 FROM creature WHERE id2<>0 UNION "
-        "SELECT DISTINCT map,id3 FROM creature WHERE id3<>0");
+        "SELECT DISTINCT map, id FROM creature WHERE id <> 0");
     if (creatures)
         do
         {
@@ -637,7 +733,7 @@ void ItemScalingLive::Impl::Prewarm(uint32 budget, std::map<std::pair<uint32, ui
         uint8 level = owner->GetLevel();
         Visit& visit = it->second;
         if (visit.level != level || visit.revision != sItemScalingConfig->Revision)
-            visit = {level, sItemScalingConfig->Revision, 0, 0, 0};
+            visit = {level, sItemScalingConfig->Revision, 0, 0, 0, visit.announcedLevel};
         auto catalogueIt = catalogue.find(map->GetId());
         if (catalogueIt != catalogue.end())
         {
@@ -957,8 +1053,8 @@ namespace
     public:
         ItemScalingLiveMapScript() : AllMapScript("ItemScalingLiveMapScript",
             {ALLMAPHOOK_ON_PLAYER_ENTER_ALL, ALLMAPHOOK_ON_PLAYER_LEAVE_ALL}) { }
-        void OnPlayerEnterAll(Map* map, Player* /*player*/) override { sItemScalingLive->EnterMap(*map); }
-        void OnPlayerLeaveAll(Map* map, Player* /*player*/) override { sItemScalingLive->EnterMap(*map); }
+        void OnPlayerEnterAll(Map* map, Player* player) override { sItemScalingLive->EnterMap(*map, player); }
+        void OnPlayerLeaveAll(Map* map, Player* /*player*/) override { sItemScalingLive->EnterMap(*map, nullptr); }
     };
 
     class ItemScalingLiveCreatureScript : public AllCreatureScript

@@ -1,4 +1,4 @@
-﻿---
+---
 name: item-level-scaling-maintainer
 description: Maintain, review, debug, plan, and extend mod-item-level-scaling (Item Level Scaling & Dynamic Stats) across AzerothCore C++ hooks, database schemas, and configuration settings.
 ---
@@ -18,6 +18,7 @@ This skill provides operational workflows, engineering checklists, and diagnosti
 - Zero blocking DB calls on item tooltip generation or equip hooks.
 - Item stat modifications must maintain idempotent demand ledgers without permanent DBC corruption.
 - Configuration files must never contain duplicate section keys.
+- **Single Server Runtime Authority**: The single active server runtime is strictly located at `Server/bin/`. All binary builds and module configs must target `Server/bin/`.
 - **Zero Blocking I/O**: The AzerothCore world loop is sacred. Never add blocking I/O, sleep loops, or external synchronous network requests to the world thread.
 - **Pointer Safety**: Never hold raw entity pointers across game ticks. Re-resolve entities freshly using numeric GUIDs.
 - **Idempotent SQL**: All database migrations must be 100% idempotent with `CREATE TABLE IF NOT EXISTS` and safe column checks.

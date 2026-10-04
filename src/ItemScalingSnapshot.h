@@ -63,8 +63,8 @@ namespace ItemScalingSnapshot
         field("BuyPrice", item.BuyPrice);
         field("SellPrice", item.SellPrice);
         field("InventoryType", item.InventoryType);
-        field("AllowableClass", item.AllowableClass);
-        field("AllowableRace", item.AllowableRace);
+        field("AllowableClass", static_cast<int32>(item.AllowableClass));
+        field("AllowableRace", static_cast<int32>(item.AllowableRace));
         field("ItemLevel", item.ItemLevel);
         field("RequiredLevel", item.RequiredLevel);
         field("RequiredSkill", item.RequiredSkill);
@@ -121,22 +121,22 @@ namespace ItemScalingSnapshot
         field("lockid", item.LockID);
         field("Material", item.Material);
         field("sheath", item.Sheath);
-        field("RandomProperty", item.RandomProperty);
+        field("RandomProperty", static_cast<int32>(item.RandomProperty));
         field("RandomSuffix", item.RandomSuffix);
         field("block", item.Block);
         field("itemset", item.ItemSet);
         field("MaxDurability", item.MaxDurability);
         field("area", item.Area);
         field("Map", item.Map);
-        field("BagFamily", item.BagFamily);
-        field("TotemCategory", item.TotemCategory);
+        field("BagFamily", static_cast<int32>(item.BagFamily));
+        field("TotemCategory", static_cast<int32>(item.TotemCategory));
         for (uint32 i = 0; i < MAX_ITEM_PROTO_SOCKETS; ++i)
         {
             field("socketColor_" + std::to_string(i + 1), item.Socket[i].Color);
-            field("socketContent_" + std::to_string(i + 1), item.Socket[i].Content);
+            field("socketContent_" + std::to_string(i + 1), static_cast<int32>(item.Socket[i].Content));
         }
-        field("socketBonus", item.socketBonus);
-        field("GemProperties", item.GemProperties);
+        field("socketBonus", static_cast<int32>(item.socketBonus));
+        field("GemProperties", static_cast<int32>(item.GemProperties));
         field("RequiredDisenchantSkill", item.RequiredDisenchantSkill);
         field("ArmorDamageModifier", item.ArmorDamageModifier);
         field("duration", item.Duration);

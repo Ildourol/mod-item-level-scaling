@@ -276,8 +276,8 @@ void ItemScalingLootScript::PrepareLoot(Loot* loot, LootStore const& store, Play
     targetInput.creatureSourceLevel = cSrc;
     targetInput.instanceMaxLevel = cMax;
     targetInput.observedCreatureLevel = creature ? creature->GetLevel() : cSrc;
-    targetInput.floor = sItemScalingConfig->GetDynamicFloor(map->IsRaid());
-    targetInput.ceiling = sItemScalingConfig->GetDynamicCeiling(map->IsRaid());
+    targetInput.floor = sItemScalingConfig->GetDynamicFloor(map);
+    targetInput.ceiling = sItemScalingConfig->GetDynamicCeiling(map);
     targetInput.minLevel = sItemScalingConfig->MinLevel;
     targetInput.maxLevel = sItemScalingConfig->MaxLevel;
     targetInput.dynamic = sItemScalingConfig->Method == SCALING_METHOD_DYNAMIC;

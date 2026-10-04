@@ -27,6 +27,11 @@ Welcome to `mod-item-level-scaling`. This document defines the strict architectu
 * **Item stat modifications must maintain idempotent demand ledgers without permanent DBC corruption.**: Item stat modifications must maintain idempotent demand ledgers without permanent DBC corruption.
 * **Configuration files must never contain duplicate section keys.**: Configuration files must never contain duplicate section keys.
 
+### E. Single Server Runtime Authority & Binary Path Invariant
+* **Authoritative Runtime Environment**: The single active server runtime is strictly located at `Azerothcore server/Server/bin/`.
+* **Zero Binary Drift**: All compiled server executables (`worldserver.exe`, `authserver.exe`) and runtime module configurations must reside in `Server/bin/` and `Server/bin/configs/modules/`.
+* Never inspect, edit, or create executables or configs in the parent `Server/` root. `Server/configs` is a junction pointing to `Server/bin/configs`.
+
 ---
 
 ## 2. Repository Layout & Component Ownership

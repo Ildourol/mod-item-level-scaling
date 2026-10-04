@@ -98,6 +98,8 @@ public:
         handler->PSendSysMessage("AutoBalance Synergy: {}", sItemScalingConfig->UseAutoBalanceSettings ? "|cff00ff00ACTIVE (Default 1 - Adopting AutoBalance Settings)|r" : "|cffff8000INACTIVE (Using Standalone Config)|r");
         handler->PSendSysMessage("Dynamic Dungeons: Floor -{}, Ceiling +{}", sItemScalingConfig->DynamicFloorDungeons, sItemScalingConfig->DynamicCeilingDungeons);
         handler->PSendSysMessage("Dynamic Raids: Floor -{}, Ceiling +{}", sItemScalingConfig->DynamicFloorRaids, sItemScalingConfig->DynamicCeilingRaids);
+        handler->PSendSysMessage("Dynamic Heroic Dungeons (TBC): Floor -{}, Ceiling +{}", sItemScalingConfig->DynamicFloorHeroicDungeonsTBC, sItemScalingConfig->DynamicCeilingHeroicDungeonsTBC);
+        handler->PSendSysMessage("Dynamic Heroic Dungeons (Wrath): Floor -{}, Ceiling +{}", sItemScalingConfig->DynamicFloorHeroicDungeonsWrath, sItemScalingConfig->DynamicCeilingHeroicDungeonsWrath);
         handler->PSendSysMessage("Directional Scaling: ScaleUp={}, ScaleDown={}", sItemScalingConfig->ScaleUp ? "Yes" : "No", sItemScalingConfig->ScaleDown ? "Yes" : "No");
         handler->PSendSysMessage("RealPlayersOnly: {}, IncludeGameMasters: {}", sItemScalingConfig->RealPlayersOnly ? "Yes" : "No", sItemScalingConfig->IncludeGameMasters ? "Yes" : "No");
         handler->PSendSysMessage("RequiredLevel Policy: {}", GetPolicyName(sItemScalingConfig->ReqLevelPolicy));

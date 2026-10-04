@@ -38,7 +38,7 @@ public:
     bool IsReserved(uint32 entry) const;
     void BeginLoot(Loot const& loot, Player const& owner);
     void TrackLoot(Loot const& loot, Player const& owner, std::size_t index, VariantKey const& key);
-    void EnterMap(Map const& map);
+    void EnterMap(Map const& map, Player* player = nullptr);
     void CancelSource(uint32 map, uint32 instance, ObjectGuid source);
     bool DeferPacket(WorldSession* session, WorldPacket const& packet);
     bool PrepareChest(Player* player, GameObject* go);

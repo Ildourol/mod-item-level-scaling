@@ -9,6 +9,8 @@
 #include "ItemScalingCommon.h"
 #include <unordered_set>
 
+class Map;
+
 class ItemScalingConfig
 {
 public:
@@ -44,10 +46,17 @@ public:
     bool PreserveNonZeroStats{true};
     RequiredLevelPolicy ReqLevelPolicy{REQ_POLICY_TARGET};
 
-    uint8 DynamicFloorDungeons{5};
-    uint8 DynamicCeilingDungeons{3};
-    uint8 DynamicFloorRaids{5};
+    uint8 DynamicFloorDungeons{3};
+    uint8 DynamicCeilingDungeons{5};
+    uint8 DynamicFloorRaids{0};
     uint8 DynamicCeilingRaids{3};
+
+    uint8 DynamicFloorHeroicDungeons{0};
+    uint8 DynamicCeilingHeroicDungeons{5};
+    uint8 DynamicFloorHeroicDungeonsTBC{0};
+    uint8 DynamicCeilingHeroicDungeonsTBC{5};
+    uint8 DynamicFloorHeroicDungeonsWrath{0};
+    uint8 DynamicCeilingHeroicDungeonsWrath{5};
 
     bool UseAutoBalanceSettings{false};
     bool AutoSyntheticEntry{true};
@@ -73,13 +82,16 @@ public:
     std::unordered_set<uint32> ExcludedItemIds;
 
     bool Debug{false};
+    bool Announce{true};
 
     [[nodiscard]] bool IsQualityEnabled(uint32 quality) const;
     [[nodiscard]] bool IsLevelExcluded(uint8 level) const;
     [[nodiscard]] bool IsMapExcluded(uint32 mapId) const;
     [[nodiscard]] bool IsItemExcluded(uint32 itemId) const;
-    [[nodiscard]] uint8 GetDynamicFloor(bool isRaid) const;
-    [[nodiscard]] uint8 GetDynamicCeiling(bool isRaid) const;
+    [[nodiscard]] uint8 GetDynamicFloor(bool isRaid, bool isHeroic = false, uint32 expansion = 0) const;
+    [[nodiscard]] uint8 GetDynamicCeiling(bool isRaid, bool isHeroic = false, uint32 expansion = 0) const;
+    [[nodiscard]] uint8 GetDynamicFloor(Map const* map) const;
+    [[nodiscard]] uint8 GetDynamicCeiling(Map const* map) const;
 };
 
 #define sItemScalingConfig ItemScalingConfig::instance()
