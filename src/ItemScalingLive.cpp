@@ -29,6 +29,7 @@
 #include "ObjectMgr.h"
 #include "Opcodes.h"
 #include "Player.h"
+#include "PlayerScript.h"
 #include "ServerScript.h"
 #include "Spell.h"
 #include "SpellInfo.h"
@@ -472,32 +473,15 @@ void ItemScalingLive::EnterMap(Map const& map, Player* player)
     {
         char const* rawMapName = map.GetMapName();
         std::string mapName = rawMapName ? rawMapName : "Instance";
-        if (map.IsHeroic())
-        {
-            uint32 expansion = map.GetEntry() ? map.GetEntry()->Expansion() : 0;
-            if (map.IsRaid())
-            {
-                mapName = Acore::StringFormat("Heroic %s", rawMapName ? rawMapName : "Raid");
-            }
-            else if (expansion == 1)
-            {
-                mapName = Acore::StringFormat("Heroic %s (TBC)", rawMapName ? rawMapName : "Dungeon");
-            }
-            else if (expansion == 2)
-            {
-                mapName = Acore::StringFormat("Heroic %s (Wrath)", rawMapName ? rawMapName : "Dungeon");
-            }
-            else
-            {
-                mapName = Acore::StringFormat("Heroic %s", rawMapName ? rawMapName : "Dungeon");
-            }
-        }
+        std::string categoryTag = sItemScalingConfig->GetInstanceCategoryDescription(&map);
+        uint8 ceiling = sItemScalingConfig->GetDynamicCeiling(&map);
+        uint8 floor = sItemScalingConfig->GetDynamicFloor(&map);
 
         if (shouldAnnounceRecalc)
         {
             std::string msg = Acore::StringFormat(
-                "|cff00ccff[ItemScaling]|r Higher-level player %s (level %u) entered %s! Instance loot scaling recalculated to level %u.",
-                highestPlayerName, highestLevel, mapName.c_str(), highestLevel);
+                "|cff00ccff[ItemScaling]|r Player Level Update in %s %s: Loot scaling recalculated to level %u (Highest Player: %s) [Ceiling: +%u, Floor: -%u].",
+                mapName.c_str(), categoryTag.c_str(), highestLevel, highestPlayerName.c_str(), ceiling, floor);
 
             for (auto const& ref : map.GetPlayers())
             {
@@ -513,8 +497,8 @@ void ItemScalingLive::EnterMap(Map const& map, Player* player)
         else if (shouldAnnounceEntry && player && player->IsInWorld() && player->GetSession())
         {
             std::string msg = Acore::StringFormat(
-                "|cff00ccff[ItemScaling]|r Entering %s: Loot scaling active for level %u (highest player: %s).",
-                mapName.c_str(), highestLevel, highestPlayerName);
+                "|cff00ccff[ItemScaling]|r Entering %s %s: Loot scaling active for level %u (Highest Player: %s) [Ceiling: +%u, Floor: -%u].",
+                mapName.c_str(), categoryTag.c_str(), highestLevel, highestPlayerName.c_str(), ceiling, floor);
 
             ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
         }
@@ -1080,6 +1064,25 @@ namespace
             sItemScalingLive->CancelSource(go->GetMapId(), go->GetInstanceId(), go->GetGUID());
         }
     };
+
+    class ItemScalingLivePlayerScript : public PlayerScript
+    {
+    public:
+        ItemScalingLivePlayerScript() : PlayerScript("ItemScalingLivePlayerScript",
+            {PLAYERHOOK_ON_LEVEL_CHANGED}) { }
+
+        void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
+        {
+            if (!player || !player->IsInWorld())
+                return;
+
+            Map* map = player->GetMap();
+            if (!map || !map->IsDungeon() || map->IsBattlegroundOrArena() || sItemScalingConfig->IsMapExcluded(map->GetId()))
+                return;
+
+            sItemScalingLive->EnterMap(*map, player);
+        }
+    };
 }
 
 void AddItemScalingLiveScripts()
@@ -1088,4 +1091,5 @@ void AddItemScalingLiveScripts()
     new ItemScalingLiveMapScript();
     new ItemScalingLiveCreatureScript();
     new ItemScalingLiveGameObjectScript();
+    new ItemScalingLivePlayerScript();
 }

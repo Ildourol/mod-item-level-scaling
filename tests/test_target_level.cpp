@@ -156,4 +156,67 @@ int main()
     input.ceiling = 5;
     input.floor = 0;
     assert(Resolve(input) == 80); // Boss: 80 + 5 clamped to maxLevel 80
+
+    // 10M / 25M Normal Raid Scaling with Ceiling 3, Floor 0
+    input = BaseInput();
+    input.playerLevel = 75;
+    input.instanceMaxLevel = 77;
+    input.creatureMinLevel = 73;
+    input.creatureSourceLevel = 77;
+    input.observedCreatureLevel = 77;
+    input.ceiling = 3;
+    input.floor = 0;
+    assert(Resolve(input) == 78); // Boss: 75 + 3 = 78
+
+    input.creatureSourceLevel = 74;
+    input.observedCreatureLevel = 74;
+    assert(Resolve(input) == 75); // Trash: 75 + 3 - (77-74) = 75
+
+    // 15M (UBRS) / 20M (ZG/AQ20) Raid Scaling with Ceiling 3, Floor 0
+    input = BaseInput();
+    input.playerLevel = 58;
+    input.instanceMaxLevel = 62;
+    input.creatureMinLevel = 58;
+    input.creatureSourceLevel = 62;
+    input.observedCreatureLevel = 62;
+    input.ceiling = 3;
+    input.floor = 0;
+    assert(Resolve(input) == 61); // Boss: 58 + 3 = 61
+
+    input.creatureSourceLevel = 55;
+    input.observedCreatureLevel = 55;
+    assert(Resolve(input) == 58); // Trash clamped to floor: 58 - 0 = 58
+
+    // 40M Raid (Molten Core / BWL) with Ceiling 3, Floor 0
+    input = BaseInput();
+    input.playerLevel = 60;
+    input.instanceMaxLevel = 63;
+    input.creatureMinLevel = 60;
+    input.creatureSourceLevel = 63;
+    input.observedCreatureLevel = 63;
+    input.ceiling = 3;
+    input.floor = 0;
+    assert(Resolve(input) == 63); // Boss: 60 + 3 = 63
+
+    // Per-Instance Custom Override (e.g. Map 229 UBRS Override: Ceiling 1, Floor 0)
+    input = BaseInput();
+    input.playerLevel = 60;
+    input.instanceMaxLevel = 62;
+    input.creatureMinLevel = 58;
+    input.creatureSourceLevel = 62;
+    input.observedCreatureLevel = 62;
+    input.ceiling = 1; // custom per-instance override
+    input.floor = 0;
+    assert(Resolve(input) == 61); // Boss: 60 + 1 = 61
+
+    // Per-Instance Custom Override (e.g. Map 230 BRD Override: Ceiling 0, Floor 0)
+    input = BaseInput();
+    input.playerLevel = 55;
+    input.instanceMaxLevel = 59;
+    input.creatureMinLevel = 50;
+    input.creatureSourceLevel = 59;
+    input.observedCreatureLevel = 59;
+    input.ceiling = 0; // strict zero ceiling
+    input.floor = 0;
+    assert(Resolve(input) == 55); // Boss: 55 + 0 = 55
 }

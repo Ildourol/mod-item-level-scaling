@@ -95,11 +95,22 @@ public:
         handler->PSendSysMessage("|cff3399ff=== [Item Level Scaling Status & Diagnostics] ===|r");
         handler->PSendSysMessage("Module State: {}", sItemScalingConfig->Enable ? "|cff00ff00ENABLED|r" : "|cffff0000DISABLED|r");
         handler->PSendSysMessage("Scaling Method: {}", sItemScalingConfig->Method == SCALING_METHOD_DYNAMIC ? "Dynamic" : "Fixed");
-        handler->PSendSysMessage("AutoBalance Synergy: {}", sItemScalingConfig->UseAutoBalanceSettings ? "|cff00ff00ACTIVE (Default 1 - Adopting AutoBalance Settings)|r" : "|cffff8000INACTIVE (Using Standalone Config)|r");
+        handler->PSendSysMessage("AutoBalance Synergy: {}", sItemScalingConfig->UseAutoBalanceSettings ? "|cff00ff00ACTIVE (Adopting AutoBalance Settings)|r" : "|cffff8000INACTIVE (Default 0 - Standalone Config)|r");
         handler->PSendSysMessage("Dynamic Dungeons: Floor -{}, Ceiling +{}", sItemScalingConfig->DynamicFloorDungeons, sItemScalingConfig->DynamicCeilingDungeons);
-        handler->PSendSysMessage("Dynamic Raids: Floor -{}, Ceiling +{}", sItemScalingConfig->DynamicFloorRaids, sItemScalingConfig->DynamicCeilingRaids);
         handler->PSendSysMessage("Dynamic Heroic Dungeons (TBC): Floor -{}, Ceiling +{}", sItemScalingConfig->DynamicFloorHeroicDungeonsTBC, sItemScalingConfig->DynamicCeilingHeroicDungeonsTBC);
         handler->PSendSysMessage("Dynamic Heroic Dungeons (Wrath): Floor -{}, Ceiling +{}", sItemScalingConfig->DynamicFloorHeroicDungeonsWrath, sItemScalingConfig->DynamicCeilingHeroicDungeonsWrath);
+        handler->PSendSysMessage("Dynamic Raids (Default): Floor -{}, Ceiling +{}", sItemScalingConfig->DynamicFloorRaids, sItemScalingConfig->DynamicCeilingRaids);
+        handler->PSendSysMessage("Dynamic Raids 10M: Normal [-{}, +{}], Heroic [-{}, +{}]",
+            sItemScalingConfig->DynamicFloorRaid10M, sItemScalingConfig->DynamicCeilingRaid10M,
+            sItemScalingConfig->DynamicFloorRaid10MHeroic, sItemScalingConfig->DynamicCeilingRaid10MHeroic);
+        handler->PSendSysMessage("Dynamic Raids 15M/20M: 15M [-{}, +{}], 20M [-{}, +{}]",
+            sItemScalingConfig->DynamicFloorRaid15M, sItemScalingConfig->DynamicCeilingRaid15M,
+            sItemScalingConfig->DynamicFloorRaid20M, sItemScalingConfig->DynamicCeilingRaid20M);
+        handler->PSendSysMessage("Dynamic Raids 25M/40M: 25M Norm [-{}, +{}], 25M Heroic [-{}, +{}], 40M [-{}, +{}]",
+            sItemScalingConfig->DynamicFloorRaid25M, sItemScalingConfig->DynamicCeilingRaid25M,
+            sItemScalingConfig->DynamicFloorRaid25MHeroic, sItemScalingConfig->DynamicCeilingRaid25MHeroic,
+            sItemScalingConfig->DynamicFloorRaid40M, sItemScalingConfig->DynamicCeilingRaid40M);
+        handler->PSendSysMessage("Per-Instance Overrides: {} configured", sItemScalingConfig->DynamicOverrides.size());
         handler->PSendSysMessage("Directional Scaling: ScaleUp={}, ScaleDown={}", sItemScalingConfig->ScaleUp ? "Yes" : "No", sItemScalingConfig->ScaleDown ? "Yes" : "No");
         handler->PSendSysMessage("RealPlayersOnly: {}, IncludeGameMasters: {}", sItemScalingConfig->RealPlayersOnly ? "Yes" : "No", sItemScalingConfig->IncludeGameMasters ? "Yes" : "No");
         handler->PSendSysMessage("RequiredLevel Policy: {}", GetPolicyName(sItemScalingConfig->ReqLevelPolicy));

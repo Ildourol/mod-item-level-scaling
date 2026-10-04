@@ -8,6 +8,8 @@
 #include "Config.h"
 #include "ItemScalingCommon.h"
 #include <unordered_set>
+#include <unordered_map>
+#include <string>
 
 class Map;
 
@@ -22,6 +24,14 @@ public:
     bool ScaleDungeons{true};
     bool ScaleRaids{true};
     bool ScaleHeroics{true};
+    bool ScaleHeroicDungeons{true};
+    bool ScaleRaid10M{true};
+    bool ScaleRaid10MHeroic{true};
+    bool ScaleRaid15M{true};
+    bool ScaleRaid20M{true};
+    bool ScaleRaid25M{true};
+    bool ScaleRaid25MHeroic{true};
+    bool ScaleRaid40M{true};
     bool ScaleChests{true};
     ItemScalingMethod Method{SCALING_METHOD_DYNAMIC};
     uint8 MinLevel{1};
@@ -58,6 +68,35 @@ public:
     uint8 DynamicFloorHeroicDungeonsWrath{0};
     uint8 DynamicCeilingHeroicDungeonsWrath{5};
 
+    uint8 DynamicFloorHeroicRaids{0};
+    uint8 DynamicCeilingHeroicRaids{3};
+
+    uint8 DynamicFloorRaid10M{0};
+    uint8 DynamicCeilingRaid10M{3};
+    uint8 DynamicFloorRaid10MHeroic{0};
+    uint8 DynamicCeilingRaid10MHeroic{3};
+
+    uint8 DynamicFloorRaid15M{0};
+    uint8 DynamicCeilingRaid15M{3};
+
+    uint8 DynamicFloorRaid20M{0};
+    uint8 DynamicCeilingRaid20M{3};
+
+    uint8 DynamicFloorRaid25M{0};
+    uint8 DynamicCeilingRaid25M{3};
+    uint8 DynamicFloorRaid25MHeroic{0};
+    uint8 DynamicCeilingRaid25MHeroic{3};
+
+    uint8 DynamicFloorRaid40M{0};
+    uint8 DynamicCeilingRaid40M{3};
+
+    struct DynamicLevelOverride
+    {
+        int32 ceiling{-1};
+        int32 floor{-1};
+    };
+    std::unordered_map<uint32, DynamicLevelOverride> DynamicOverrides;
+
     bool UseAutoBalanceSettings{false};
     bool AutoSyntheticEntry{true};
     uint32 SyntheticEntryStart{60000};
@@ -88,10 +127,14 @@ public:
     [[nodiscard]] bool IsLevelExcluded(uint8 level) const;
     [[nodiscard]] bool IsMapExcluded(uint32 mapId) const;
     [[nodiscard]] bool IsItemExcluded(uint32 itemId) const;
-    [[nodiscard]] uint8 GetDynamicFloor(bool isRaid, bool isHeroic = false, uint32 expansion = 0) const;
-    [[nodiscard]] uint8 GetDynamicCeiling(bool isRaid, bool isHeroic = false, uint32 expansion = 0) const;
+    [[nodiscard]] std::string GetInstanceCategoryDescription(Map const* map) const;
+    [[nodiscard]] uint8 GetDynamicFloor(bool isRaid, bool isHeroic = false, uint32 expansion = 0, uint32 maxPlayers = 0, uint32 mapId = 0) const;
+    [[nodiscard]] uint8 GetDynamicCeiling(bool isRaid, bool isHeroic = false, uint32 expansion = 0, uint32 maxPlayers = 0, uint32 mapId = 0) const;
     [[nodiscard]] uint8 GetDynamicFloor(Map const* map) const;
     [[nodiscard]] uint8 GetDynamicCeiling(Map const* map) const;
+
+    void ParseItemScalingDynamicOverrides(std::string const& configStr);
+    void ParseAutoBalanceDynamicOverrides(std::string const& configStr);
 };
 
 #define sItemScalingConfig ItemScalingConfig::instance()

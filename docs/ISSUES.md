@@ -18,6 +18,7 @@
 | <a id="mils-005"></a> **[MILS-005]** | Startup Fatal Error: Unknown Column 'id1' in Field List during Dungeon Loot Prewarm | High | **RESOLVED** | `src/ItemScalingLive.cpp` |
 | <a id="mils-006"></a> **[MILS-006]** | Async Transaction Failure: Error 1264 Out of Range on AllowableClass during Live Staging | High | **RESOLVED** | `src/ItemScalingSnapshot.h` |
 | <a id="mils-007"></a> **[MILS-007]** | Granular Dynamic Scaling Ceilings & Floors for Dungeons, Raids, and TBC/Wrath Heroics | Medium | **RESOLVED** | `src/ItemScalingConfig.cpp` |
+| <a id="mils-008"></a> **[MILS-008]** | AutoBalance Synergy Pairing, 1-to-1 Category Revamp & Real-Time In-Instance Announcements | Medium | **RESOLVED** | `src/ItemScalingConfig.cpp`, `src/ItemScalingLive.cpp` |
 
 ---
 
@@ -154,5 +155,34 @@
   - Raid: boss = player + 3, trash floor = player - 0 (zero downscaling below player level).
   - TBC/Wrath Heroic: boss = player + 5, trash floor = player - 0 (zero downscaling below player level).
   `tests/check_source.py` passes all syntax, duplicate key, and contract checks.
+
+---
+
+<a id="mils-008"></a>
+
+### [MILS-008] AutoBalance Synergy Pairing, 1-to-1 Category Revamp & Real-Time In-Instance Announcements
+
+* **Severity**: Medium (Feature & Integration Enhancement)
+* **Component**: AutoBalance Pairing, Instance Category Resolution, Player Scripts & In-Game Announcements
+* **Status**: **RESOLVED** (2026-10-04)
+* **Affected Files**: [`src/ItemScalingConfig.h`](../src/ItemScalingConfig.h), [`src/ItemScalingConfig.cpp`](../src/ItemScalingConfig.cpp), [`src/ItemScalingLive.cpp`](../src/ItemScalingLive.cpp), [`src/ItemScalingLootScript.cpp`](../src/ItemScalingLootScript.cpp), [`src/ItemScalingCommands.cpp`](../src/ItemScalingCommands.cpp), [`conf/mod_item_level_scaling.conf.dist`](../conf/mod_item_level_scaling.conf.dist), [`Server/bin/configs/modules/mod_item_level_scaling.conf`](../../Azerothcore%20server/Server/bin/configs/modules/mod_item_level_scaling.conf), [`tests/test_target_level.cpp`](../tests/test_target_level.cpp)
+* **Symptoms & Evidence**:
+  Previous iterations lacked 1-to-1 category alignment with `mod-autobalance`. AutoBalance distinguishes 5M Normal, 5M Heroic, 10M Normal, 10M Heroic, 15M (UBRS), 20M (ZG/AQ20), 25M Normal, 25M Heroic, 40M (MC/BWL/AQ40), and PerInstance overrides. Furthermore, AutoBalance synergy was disabled without an explicit ingestion parser for AutoBalance's 5-token `AutoBalance.LevelScaling.DynamicLevel.PerInstance` syntax. In-instance announcements did not report active ceiling/floor boundaries, and player level-ups inside dungeons/raids did not trigger recalculation broadcasts.
+* **Root Cause Analysis**:
+  1. `ItemScalingConfig` did not model granular raid size tiers (`maxPlayers <= 10`, `15`, `20`, `25`, `40`) or per-instance override tables (`DynamicOverrides`).
+  2. Announcements in `ItemScalingLive::EnterMap` lacked category difficulty tags and ceiling/floor boundaries.
+  3. No `PlayerScript` hook existed to detect `PLAYERHOOK_ON_LEVEL_CHANGED` when players gained levels inside active instances.
+* **Resolution**:
+  1. Added full 1-to-1 category support matching AutoBalance: `Scale.HeroicDungeons`, `Scale.Raid10M`, `Scale.Raid10MHeroic`, `Scale.Raid15M`, `Scale.Raid20M`, `Scale.Raid25M`, `Scale.Raid25MHeroic`, and `Scale.Raid40M`.
+  2. Added dedicated dynamic ceilings & floors for all raid categories (default Ceiling: 3, Floor: 0).
+  3. Implemented `DynamicOverrides` map with dual-syntax parser supporting both ItemScaling 3-token (`[MapID] [Ceiling] [Floor]`) and AutoBalance 5-token (`[MapID] [SkipHigher] [SkipLower] [Ceiling] [Floor]`) override formats.
+  4. Implemented AutoBalance synergy loader when `UseAutoBalanceSettings = 1` (default 0), dynamically copying method, ceilings, floors, and per-instance tables from `AutoBalance.conf`.
+  5. Implemented `GetInstanceCategoryDescription(Map const* map)` producing formatted tags (e.g. `[25-man Raid]`, `[Wrath Heroic]`, `[Dungeon]`).
+  6. Implemented `ItemScalingLivePlayerScript` hooked to `PLAYERHOOK_ON_LEVEL_CHANGED` to automatically recalculate and broadcast updates whenever a character levels up in an instance.
+  7. Formatted announcements on entry and level change to report instance name, category tag, highest player name & level, and active limits (`[Ceiling: +%u, Floor: -%u]`).
+  8. Synchronized configuration template and runtime server config.
+* **Regression Guard**:
+  - `python tests/check_source.py --core "../azerothcore-wotlk"` passes all contract checks, tooltip field coverage, and non-duplicate config key assertions.
+  - Expanded `tests/test_target_level.cpp` with unit tests for 10M, 15M, 20M, 25M, 40M, and per-instance ceiling/floor overrides.
 
 

@@ -121,6 +121,30 @@ static bool IsEligibleInstanceMap(Map const* map)
         {
             return false;
         }
+
+        uint32 maxPlayers = map->GetMaxPlayers();
+        bool isHeroic = map->IsHeroic();
+
+        if (isHeroic)
+        {
+            if (maxPlayers <= 10 && !sItemScalingConfig->ScaleRaid10MHeroic)
+                return false;
+            if (maxPlayers > 10 && maxPlayers <= 25 && !sItemScalingConfig->ScaleRaid25MHeroic)
+                return false;
+        }
+        else
+        {
+            if (maxPlayers <= 10 && !sItemScalingConfig->ScaleRaid10M)
+                return false;
+            if (maxPlayers == 15 && !sItemScalingConfig->ScaleRaid15M)
+                return false;
+            if (maxPlayers == 20 && !sItemScalingConfig->ScaleRaid20M)
+                return false;
+            if (maxPlayers > 20 && maxPlayers <= 25 && !sItemScalingConfig->ScaleRaid25M)
+                return false;
+            if (maxPlayers > 25 && maxPlayers <= 40 && !sItemScalingConfig->ScaleRaid40M)
+                return false;
+        }
     }
     else if (map->IsNonRaidDungeon())
     {
@@ -128,7 +152,7 @@ static bool IsEligibleInstanceMap(Map const* map)
         {
             return false;
         }
-        if (map->IsHeroic() && !sItemScalingConfig->ScaleHeroics)
+        if (map->IsHeroic() && (!sItemScalingConfig->ScaleHeroics || !sItemScalingConfig->ScaleHeroicDungeons))
         {
             return false;
         }

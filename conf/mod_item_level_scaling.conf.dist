@@ -44,6 +44,29 @@ ItemScaling.ScaleRaids = 1
 ItemScaling.ScaleHeroics = 1
 
 #
+#    Granular Instance Category Toggles (1-to-1 Parity with AutoBalance)
+#        Description: Granular toggles to enable or disable item scaling per instance category:
+#                     Scale.HeroicDungeons (5-player heroic dungeons)
+#                     Scale.Raid10M        (10-player normal raids)
+#                     Scale.Raid10MHeroic  (10-player heroic raids)
+#                     Scale.Raid15M        (15-player raids, e.g. Upper Blackrock Spire)
+#                     Scale.Raid20M        (20-player raids, e.g. Zul'Gurub, AQ20)
+#                     Scale.Raid25M        (25-player normal raids)
+#                     Scale.Raid25MHeroic  (25-player heroic raids)
+#                     Scale.Raid40M        (40-player raids, e.g. Molten Core, BWL, AQ40)
+#        Default:     1 - Enabled
+#
+
+ItemScaling.Scale.HeroicDungeons = 1
+ItemScaling.Scale.Raid10M = 1
+ItemScaling.Scale.Raid10MHeroic = 1
+ItemScaling.Scale.Raid15M = 1
+ItemScaling.Scale.Raid20M = 1
+ItemScaling.Scale.Raid25M = 1
+ItemScaling.Scale.Raid25MHeroic = 1
+ItemScaling.Scale.Raid40M = 1
+
+#
 #    ItemScaling.ScaleChests
 #        Description: Enable scaling for instanced chests and gameobject loot.
 #        Default:     1 - Enabled
@@ -271,9 +294,57 @@ ItemScaling.Dynamic.Ceiling.HeroicDungeons.Wrath = 5
 ItemScaling.Dynamic.Floor.HeroicDungeons.Wrath = 0
 
 #
+#    Dynamic Scaling for Raid Categories (1-to-1 Parity with AutoBalance)
+#        Description: Fine-grained dynamic ceiling and floor configurations for distinct raid sizes
+#                     and difficulties:
+#                     Raid10M / Raid10MHeroic: 10-player raids
+#                     Raid15M: 15-player raids (e.g. Upper Blackrock Spire)
+#                     Raid20M: 20-player raids (e.g. Zul'Gurub, Ruins of Ahn'Qiraj)
+#                     Raid25M / Raid25MHeroic: 25-player raids
+#                     Raid40M: 40-player raids (e.g. Molten Core, Blackwing Lair, AQ40)
+#                     HeroicRaids serves as the generic fallback for heroic raids.
+#        Default:     Ceiling = 3, Floor = 0
+#
+
+ItemScaling.Dynamic.Ceiling.HeroicRaids = 3
+ItemScaling.Dynamic.Floor.HeroicRaids = 0
+
+ItemScaling.Dynamic.Ceiling.Raid10M = 3
+ItemScaling.Dynamic.Floor.Raid10M = 0
+ItemScaling.Dynamic.Ceiling.Raid10MHeroic = 3
+ItemScaling.Dynamic.Floor.Raid10MHeroic = 0
+
+ItemScaling.Dynamic.Ceiling.Raid15M = 3
+ItemScaling.Dynamic.Floor.Raid15M = 0
+
+ItemScaling.Dynamic.Ceiling.Raid20M = 3
+ItemScaling.Dynamic.Floor.Raid20M = 0
+
+ItemScaling.Dynamic.Ceiling.Raid25M = 3
+ItemScaling.Dynamic.Floor.Raid25M = 0
+ItemScaling.Dynamic.Ceiling.Raid25MHeroic = 3
+ItemScaling.Dynamic.Floor.Raid25MHeroic = 0
+
+ItemScaling.Dynamic.Ceiling.Raid40M = 3
+ItemScaling.Dynamic.Floor.Raid40M = 0
+
+#
+#    Per-Instance Dynamic Level Overrides
+#        Description: Override ceiling and floor values for specific map IDs.
+#                     Format: "[MapID] [Ceiling] [Floor], [MapID] [Ceiling] [Floor], ..."
+#                     Also accepts AutoBalance 5-token syntax:
+#                     "[MapID] [SkipHigher] [SkipLower] [Ceiling] [Floor], ..."
+#                     Example: "229 3 0, 230 5 3"
+#        Default:     "" (empty string = no overrides)
+#
+
+ItemScaling.Dynamic.PerInstance = ""
+
+#
 #    ItemScaling.UseAutoBalanceSettings
 #        Description: If mod-autobalance is loaded, automatically adopt its configured LevelScaling.Method,
-#                     Dynamic.Floor, and Dynamic.Ceiling settings for instance types.
+#                     Dynamic.Floor, and Dynamic.Ceiling settings for instance types directly from AutoBalance.conf.
+#                     Also ingests AutoBalance.LevelScaling.DynamicLevel.PerInstance overrides.
 #        Default:     0 - Disabled (strictly use ItemScaling.* config values exclusively)
 #                     1 - Enabled (adopt AutoBalance values)
 #

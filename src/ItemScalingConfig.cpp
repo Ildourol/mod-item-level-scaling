@@ -54,6 +54,14 @@ void ItemScalingConfig::Load(bool reload)
     ScaleDungeons = sConfigMgr->GetOption<bool>("ItemScaling.ScaleDungeons", true);
     ScaleRaids = sConfigMgr->GetOption<bool>("ItemScaling.ScaleRaids", true);
     ScaleHeroics = sConfigMgr->GetOption<bool>("ItemScaling.ScaleHeroics", true);
+    ScaleHeroicDungeons = sConfigMgr->GetOption<bool>("ItemScaling.Scale.HeroicDungeons", ScaleHeroics);
+    ScaleRaid10M = sConfigMgr->GetOption<bool>("ItemScaling.Scale.Raid10M", true);
+    ScaleRaid10MHeroic = sConfigMgr->GetOption<bool>("ItemScaling.Scale.Raid10MHeroic", true);
+    ScaleRaid15M = sConfigMgr->GetOption<bool>("ItemScaling.Scale.Raid15M", true);
+    ScaleRaid20M = sConfigMgr->GetOption<bool>("ItemScaling.Scale.Raid20M", true);
+    ScaleRaid25M = sConfigMgr->GetOption<bool>("ItemScaling.Scale.Raid25M", true);
+    ScaleRaid25MHeroic = sConfigMgr->GetOption<bool>("ItemScaling.Scale.Raid25MHeroic", true);
+    ScaleRaid40M = sConfigMgr->GetOption<bool>("ItemScaling.Scale.Raid40M", true);
     ScaleChests = sConfigMgr->GetOption<bool>("ItemScaling.ScaleChests", true);
 
     std::string methodStr = sConfigMgr->GetOption<std::string>("ItemScaling.LevelScaling.Method", "dynamic");
@@ -115,6 +123,30 @@ void ItemScalingConfig::Load(bool reload)
     DynamicCeilingHeroicDungeonsWrath = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.HeroicDungeons.Wrath", DynamicCeilingHeroicDungeons)));
     DynamicFloorHeroicDungeonsWrath = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.HeroicDungeons.Wrath", DynamicFloorHeroicDungeons)));
 
+    DynamicCeilingHeroicRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.HeroicRaids", DynamicCeilingRaids)));
+    DynamicFloorHeroicRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.HeroicRaids", DynamicFloorRaids)));
+
+    DynamicCeilingRaid10M = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Raid10M", DynamicCeilingRaids)));
+    DynamicFloorRaid10M = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Raid10M", DynamicFloorRaids)));
+    DynamicCeilingRaid10MHeroic = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Raid10MHeroic", DynamicCeilingHeroicRaids)));
+    DynamicFloorRaid10MHeroic = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Raid10MHeroic", DynamicFloorHeroicRaids)));
+
+    DynamicCeilingRaid15M = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Raid15M", DynamicCeilingRaids)));
+    DynamicFloorRaid15M = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Raid15M", DynamicFloorRaids)));
+
+    DynamicCeilingRaid20M = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Raid20M", DynamicCeilingRaids)));
+    DynamicFloorRaid20M = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Raid20M", DynamicFloorRaids)));
+
+    DynamicCeilingRaid25M = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Raid25M", DynamicCeilingRaids)));
+    DynamicFloorRaid25M = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Raid25M", DynamicFloorRaids)));
+    DynamicCeilingRaid25MHeroic = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Raid25MHeroic", DynamicCeilingHeroicRaids)));
+    DynamicFloorRaid25MHeroic = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Raid25MHeroic", DynamicFloorHeroicRaids)));
+
+    DynamicCeilingRaid40M = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Raid40M", DynamicCeilingRaids)));
+    DynamicFloorRaid40M = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Raid40M", DynamicFloorRaids)));
+
+    DynamicOverrides.clear();
+
     UseAutoBalanceSettings = sConfigMgr->GetOption<bool>("ItemScaling.UseAutoBalanceSettings", false);
     if (UseAutoBalanceSettings)
     {
@@ -132,10 +164,53 @@ void ItemScalingConfig::Load(bool reload)
             "AutoBalance.LevelScaling.DynamicLevel.Ceiling.Dungeons", DynamicCeilingDungeons, false)));
         DynamicFloorDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>(
             "AutoBalance.LevelScaling.DynamicLevel.Floor.Dungeons", DynamicFloorDungeons, false)));
+
+        DynamicCeilingHeroicDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>(
+            "AutoBalance.LevelScaling.DynamicLevel.Ceiling.HeroicDungeons", DynamicCeilingHeroicDungeons, false)));
+        DynamicFloorHeroicDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>(
+            "AutoBalance.LevelScaling.DynamicLevel.Floor.HeroicDungeons", DynamicFloorHeroicDungeons, false)));
+        DynamicCeilingHeroicDungeonsTBC = DynamicCeilingHeroicDungeons;
+        DynamicFloorHeroicDungeonsTBC = DynamicFloorHeroicDungeons;
+        DynamicCeilingHeroicDungeonsWrath = DynamicCeilingHeroicDungeons;
+        DynamicFloorHeroicDungeonsWrath = DynamicFloorHeroicDungeons;
+
         DynamicCeilingRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>(
             "AutoBalance.LevelScaling.DynamicLevel.Ceiling.Raids", DynamicCeilingRaids, false)));
         DynamicFloorRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>(
             "AutoBalance.LevelScaling.DynamicLevel.Floor.Raids", DynamicFloorRaids, false)));
+
+        DynamicCeilingHeroicRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>(
+            "AutoBalance.LevelScaling.DynamicLevel.Ceiling.HeroicRaids", DynamicCeilingHeroicRaids, false)));
+        DynamicFloorHeroicRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>(
+            "AutoBalance.LevelScaling.DynamicLevel.Floor.HeroicRaids", DynamicFloorHeroicRaids, false)));
+
+        DynamicCeilingRaid10M = DynamicCeilingRaids;
+        DynamicFloorRaid10M = DynamicFloorRaids;
+        DynamicCeilingRaid10MHeroic = DynamicCeilingHeroicRaids;
+        DynamicFloorRaid10MHeroic = DynamicFloorHeroicRaids;
+        DynamicCeilingRaid15M = DynamicCeilingRaids;
+        DynamicFloorRaid15M = DynamicFloorRaids;
+        DynamicCeilingRaid20M = DynamicCeilingRaids;
+        DynamicFloorRaid20M = DynamicFloorRaids;
+        DynamicCeilingRaid25M = DynamicCeilingRaids;
+        DynamicFloorRaid25M = DynamicFloorRaids;
+        DynamicCeilingRaid25MHeroic = DynamicCeilingHeroicRaids;
+        DynamicFloorRaid25MHeroic = DynamicFloorHeroicRaids;
+        DynamicCeilingRaid40M = DynamicCeilingRaids;
+        DynamicFloorRaid40M = DynamicFloorRaids;
+
+        std::string abPerInstance = sConfigMgr->GetOption<std::string>(
+            "AutoBalance.LevelScaling.DynamicLevel.PerInstance", "", false);
+        if (!abPerInstance.empty())
+        {
+            ParseAutoBalanceDynamicOverrides(abPerInstance);
+        }
+    }
+
+    std::string perInstanceConfig = sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.PerInstance", "");
+    if (!perInstanceConfig.empty())
+    {
+        ParseItemScalingDynamicOverrides(perInstanceConfig);
     }
 
     if (!reload)
@@ -258,17 +333,104 @@ bool ItemScalingConfig::IsItemExcluded(uint32 itemId) const
     return ExcludedItemIds.find(itemId) != ExcludedItemIds.end();
 }
 
-uint8 ItemScalingConfig::GetDynamicFloor(bool isRaid, bool isHeroic, uint32 expansion) const
+std::string ItemScalingConfig::GetInstanceCategoryDescription(Map const* map) const
 {
+    if (!map)
+        return "[Dungeon]";
+
+    if (map->IsRaid())
+    {
+        uint32 maxPlayers = map->GetMaxPlayers();
+        bool isHeroic = map->IsHeroic();
+        if (isHeroic)
+        {
+            if (maxPlayers <= 10)
+                return "[10-man Heroic Raid]";
+            if (maxPlayers <= 25)
+                return "[25-man Heroic Raid]";
+            return "[Heroic Raid]";
+        }
+        else
+        {
+            if (maxPlayers <= 10)
+                return "[10-man Raid]";
+            if (maxPlayers == 15)
+                return "[15-man Raid]";
+            if (maxPlayers == 20)
+                return "[20-man Raid]";
+            if (maxPlayers <= 25)
+                return "[25-man Raid]";
+            if (maxPlayers <= 40)
+                return "[40-man Raid]";
+            return "[Raid]";
+        }
+    }
+
+    // Dungeon
+    bool isHeroic = map->IsHeroic();
+    uint32 expansion = map->GetEntry() ? map->GetEntry()->Expansion() : 0;
+    if (isHeroic && expansion > 0)
+    {
+        if (expansion == 1)
+            return "[TBC Heroic]";
+        if (expansion == 2)
+            return "[Wrath Heroic]";
+        return "[Heroic Dungeon]";
+    }
+
+    return "[Dungeon]";
+}
+
+uint8 ItemScalingConfig::GetDynamicFloor(bool isRaid, bool isHeroic, uint32 expansion, uint32 maxPlayers, uint32 mapId) const
+{
+    if (mapId != 0)
+    {
+        auto it = DynamicOverrides.find(mapId);
+        if (it != DynamicOverrides.end() && it->second.floor != -1)
+            return static_cast<uint8>(it->second.floor);
+    }
+
     if (isRaid)
     {
-        return DynamicFloorRaids;
+        if (UseAutoBalanceSettings)
+        {
+            return isHeroic ? DynamicFloorHeroicRaids : DynamicFloorRaids;
+        }
+
+        if (isHeroic)
+        {
+            if (maxPlayers != 0 && maxPlayers <= 10)
+                return DynamicFloorRaid10MHeroic;
+            if (maxPlayers != 0 && maxPlayers <= 25)
+                return DynamicFloorRaid25MHeroic;
+            return DynamicFloorHeroicRaids;
+        }
+        else
+        {
+            if (maxPlayers != 0)
+            {
+                if (maxPlayers <= 10)
+                    return DynamicFloorRaid10M;
+                if (maxPlayers == 15)
+                    return DynamicFloorRaid15M;
+                if (maxPlayers == 20)
+                    return DynamicFloorRaid20M;
+                if (maxPlayers <= 25)
+                    return DynamicFloorRaid25M;
+                if (maxPlayers <= 40)
+                    return DynamicFloorRaid40M;
+            }
+            return DynamicFloorRaids;
+        }
     }
 
     // Heroics are strictly supported for TBC (expansion 1) and Wrath (expansion 2).
     // Vanilla (expansion 0) does not have native heroics; fallback to standard dungeon rules.
     if (isHeroic && expansion > 0)
     {
+        if (UseAutoBalanceSettings)
+            return DynamicFloorHeroicDungeons;
+
         if (expansion == 1)
             return DynamicFloorHeroicDungeonsTBC;
         if (expansion == 2)
@@ -279,17 +441,56 @@ uint8 ItemScalingConfig::GetDynamicFloor(bool isRaid, bool isHeroic, uint32 expa
     return DynamicFloorDungeons;
 }
 
-uint8 ItemScalingConfig::GetDynamicCeiling(bool isRaid, bool isHeroic, uint32 expansion) const
+uint8 ItemScalingConfig::GetDynamicCeiling(bool isRaid, bool isHeroic, uint32 expansion, uint32 maxPlayers, uint32 mapId) const
 {
+    if (mapId != 0)
+    {
+        auto it = DynamicOverrides.find(mapId);
+        if (it != DynamicOverrides.end() && it->second.ceiling != -1)
+            return static_cast<uint8>(it->second.ceiling);
+    }
+
     if (isRaid)
     {
-        return DynamicCeilingRaids;
+        if (UseAutoBalanceSettings)
+        {
+            return isHeroic ? DynamicCeilingHeroicRaids : DynamicCeilingRaids;
+        }
+
+        if (isHeroic)
+        {
+            if (maxPlayers != 0 && maxPlayers <= 10)
+                return DynamicCeilingRaid10MHeroic;
+            if (maxPlayers != 0 && maxPlayers <= 25)
+                return DynamicCeilingRaid25MHeroic;
+            return DynamicCeilingHeroicRaids;
+        }
+        else
+        {
+            if (maxPlayers != 0)
+            {
+                if (maxPlayers <= 10)
+                    return DynamicCeilingRaid10M;
+                if (maxPlayers == 15)
+                    return DynamicCeilingRaid15M;
+                if (maxPlayers == 20)
+                    return DynamicCeilingRaid20M;
+                if (maxPlayers <= 25)
+                    return DynamicCeilingRaid25M;
+                if (maxPlayers <= 40)
+                    return DynamicCeilingRaid40M;
+            }
+            return DynamicCeilingRaids;
+        }
     }
 
     // Heroics are strictly supported for TBC (expansion 1) and Wrath (expansion 2).
     // Vanilla (expansion 0) does not have native heroics; fallback to standard dungeon rules.
     if (isHeroic && expansion > 0)
     {
+        if (UseAutoBalanceSettings)
+            return DynamicCeilingHeroicDungeons;
+
         if (expansion == 1)
             return DynamicCeilingHeroicDungeonsTBC;
         if (expansion == 2)
@@ -308,7 +509,9 @@ uint8 ItemScalingConfig::GetDynamicFloor(Map const* map) const
     bool isRaid = map->IsRaid();
     bool isHeroic = map->IsHeroic();
     uint32 expansion = map->GetEntry() ? map->GetEntry()->Expansion() : 0;
-    return GetDynamicFloor(isRaid, isHeroic, expansion);
+    uint32 maxPlayers = map->GetMaxPlayers();
+    uint32 mapId = map->GetId();
+    return GetDynamicFloor(isRaid, isHeroic, expansion, maxPlayers, mapId);
 }
 
 uint8 ItemScalingConfig::GetDynamicCeiling(Map const* map) const
@@ -319,5 +522,102 @@ uint8 ItemScalingConfig::GetDynamicCeiling(Map const* map) const
     bool isRaid = map->IsRaid();
     bool isHeroic = map->IsHeroic();
     uint32 expansion = map->GetEntry() ? map->GetEntry()->Expansion() : 0;
-    return GetDynamicCeiling(isRaid, isHeroic, expansion);
+    uint32 maxPlayers = map->GetMaxPlayers();
+    uint32 mapId = map->GetId();
+    return GetDynamicCeiling(isRaid, isHeroic, expansion, maxPlayers, mapId);
+}
+
+void ItemScalingConfig::ParseItemScalingDynamicOverrides(std::string const& configStr)
+{
+    if (configStr.empty())
+        return;
+
+    for (std::string_view entryView : Acore::Tokenize(configStr, ',', false))
+    {
+        std::vector<std::string_view> tokens;
+        for (std::string_view tok : Acore::Tokenize(entryView, ' ', false))
+        {
+            if (!tok.empty())
+                tokens.push_back(tok);
+        }
+
+        if (tokens.empty())
+            continue;
+
+        Optional<uint32> mapId = Acore::StringTo<uint32>(tokens[0]);
+        if (!mapId)
+            continue;
+
+        int32 ceiling = -1;
+        int32 floor = -1;
+
+        if (tokens.size() >= 5)
+        {
+            if (Optional<int32> c = Acore::StringTo<int32>(tokens[3]))
+                ceiling = *c;
+            if (Optional<int32> f = Acore::StringTo<int32>(tokens[4]))
+                floor = *f;
+        }
+        else if (tokens.size() >= 3)
+        {
+            if (Optional<int32> c = Acore::StringTo<int32>(tokens[1]))
+                ceiling = *c;
+            if (Optional<int32> f = Acore::StringTo<int32>(tokens[2]))
+                floor = *f;
+        }
+        else if (tokens.size() == 2)
+        {
+            if (Optional<int32> c = Acore::StringTo<int32>(tokens[1]))
+                ceiling = *c;
+        }
+
+        auto& overrideEntry = DynamicOverrides[*mapId];
+        if (ceiling != -1)
+            overrideEntry.ceiling = std::clamp<int32>(ceiling, 0, 80);
+        if (floor != -1)
+            overrideEntry.floor = std::clamp<int32>(floor, 0, 80);
+    }
+}
+
+void ItemScalingConfig::ParseAutoBalanceDynamicOverrides(std::string const& configStr)
+{
+    if (configStr.empty())
+        return;
+
+    for (std::string_view entryView : Acore::Tokenize(configStr, ',', false))
+    {
+        std::vector<std::string_view> tokens;
+        for (std::string_view tok : Acore::Tokenize(entryView, ' ', false))
+        {
+            if (!tok.empty())
+                tokens.push_back(tok);
+        }
+
+        if (tokens.empty())
+            continue;
+
+        Optional<uint32> mapId = Acore::StringTo<uint32>(tokens[0]);
+        if (!mapId)
+            continue;
+
+        int32 ceiling = -1;
+        int32 floor = -1;
+
+        if (tokens.size() >= 4)
+        {
+            if (Optional<int32> c = Acore::StringTo<int32>(tokens[3]))
+                ceiling = *c;
+        }
+        if (tokens.size() >= 5)
+        {
+            if (Optional<int32> f = Acore::StringTo<int32>(tokens[4]))
+                floor = *f;
+        }
+
+        auto& overrideEntry = DynamicOverrides[*mapId];
+        if (ceiling != -1)
+            overrideEntry.ceiling = std::clamp<int32>(ceiling, 0, 80);
+        if (floor != -1)
+            overrideEntry.floor = std::clamp<int32>(floor, 0, 80);
+    }
 }
