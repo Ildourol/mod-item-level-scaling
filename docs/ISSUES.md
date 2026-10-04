@@ -19,6 +19,10 @@
 | <a id="mils-006"></a> **[MILS-006]** | Async Transaction Failure: Error 1264 Out of Range on AllowableClass during Live Staging | High | **RESOLVED** | `src/ItemScalingSnapshot.h` |
 | <a id="mils-007"></a> **[MILS-007]** | Granular Dynamic Scaling Ceilings & Floors for Dungeons, Raids, and TBC/Wrath Heroics | Medium | **RESOLVED** | `src/ItemScalingConfig.cpp` |
 | <a id="mils-008"></a> **[MILS-008]** | AutoBalance Synergy Pairing, 1-to-1 Category Revamp & Real-Time In-Instance Announcements | Medium | **RESOLVED** | `src/ItemScalingConfig.cpp`, `src/ItemScalingLive.cpp` |
+| <a id="mils-009"></a> **[MILS-009]** | Default Dynamic Scaling Alignment: Ceiling 0 and Floor 5 Matching AutoBalance Parity | Low | **RESOLVED** | `conf/mod_item_level_scaling.conf.dist` |
+| <a id="mils-010"></a> **[MILS-010]** | Native Reference Match Bypass & Dynamic ExcludedLevels Replacement | Medium | **RESOLVED** | `src/ItemScalingTarget.h`, `src/ItemScalingFormula.cpp`, `src/ItemScalingLootScript.cpp`, `src/ItemScalingLive.cpp`, `src/ItemScalingRegistry.cpp` |
+| <a id="mils-011"></a> **[MILS-011]** | Dynamic Scaling Based on Current In-Instance Creature Level with Default Floor 3 | Medium | **RESOLVED** | `src/ItemScalingTarget.h`, `src/ItemScalingLootScript.cpp`, `src/ItemScalingConfig.h`, `src/ItemScalingConfig.cpp`, `conf/mod_item_level_scaling.conf.dist` |
+
 
 ---
 
@@ -181,8 +185,135 @@
   6. Implemented `ItemScalingLivePlayerScript` hooked to `PLAYERHOOK_ON_LEVEL_CHANGED` to automatically recalculate and broadcast updates whenever a character levels up in an instance.
   7. Formatted announcements on entry and level change to report instance name, category tag, highest player name & level, and active limits (`[Ceiling: +%u, Floor: -%u]`).
   8. Synchronized configuration template and runtime server config.
+  9. Resolved C++ compilation error by safely calling `ToInstanceMap()->GetMaxPlayers()` on `InstanceMap` rather than base `Map` across `ItemScalingConfig.cpp` and `ItemScalingLootScript.cpp`.
 * **Regression Guard**:
   - `python tests/check_source.py --core "../azerothcore-wotlk"` passes all contract checks, tooltip field coverage, and non-duplicate config key assertions.
   - Expanded `tests/test_target_level.cpp` with unit tests for 10M, 15M, 20M, 25M, 40M, and per-instance ceiling/floor overrides.
 
+---
 
+<a id="mils-009"></a>
+
+### [MILS-009] Default Dynamic Scaling Alignment: Ceiling 0 and Floor 5 Matching AutoBalance Parity
+
+* **Severity**: Low
+* **Component**: Configuration Defaults & Dynamic Target Scaling
+* **Status**: RESOLVED
+* **Affected Files**: [`conf/mod_item_level_scaling.conf.dist`](../conf/mod_item_level_scaling.conf.dist), [`Server/bin/configs/modules/mod_item_level_scaling.conf.dist`](../../Azerothcore%20server/Server/bin/configs/modules/mod_item_level_scaling.conf.dist), [`Server/bin/configs/modules/mod_item_level_scaling.conf`](../../Azerothcore%20server/Server/bin/configs/modules/mod_item_level_scaling.conf), [`src/ItemScalingConfig.h`](../src/ItemScalingConfig.h), [`src/ItemScalingConfig.cpp`](../src/ItemScalingConfig.cpp), [`tests/test_target_level.cpp`](../tests/test_target_level.cpp), [`tests/check_source.py`](../tests/check_source.py)
+* **Symptoms & Evidence**:
+  Default configuration templates and code initializers previously configured dynamic scaling ceilings to 5 (dungeons/heroics) and 3 (raids), and floors to 3 (dungeons) and 0 (raids/heroics). In comparison, AutoBalance uses a default DynamicLevel Floor of 5 across all instance categories (`Dungeons`, `HeroicDungeons`, `Raids`, `HeroicRaids`). User requirements specified configuring default `Dynamic.Ceiling` to 0 (capping maximum boss scaling level strictly to the player level) and aligning `Dynamic.Floor` to match AutoBalance per category (5).
+* **Root Cause Analysis**:
+  The module's shipped default configuration values and C++ fallback options in `ItemScalingConfig` did not align with the requested 0 Ceiling and AutoBalance category Floor of 5.
+* **Resolution**:
+  1. Updated `conf/mod_item_level_scaling.conf.dist` setting `ItemScaling.Dynamic.Ceiling.* = 0` for all categories: `Dungeons`, `Raids`, `HeroicDungeons`, `HeroicDungeons.TBC`, `HeroicDungeons.Wrath`, `HeroicRaids`, `Raid10M`, `Raid10MHeroic`, `Raid15M`, `Raid20M`, `Raid25M`, `Raid25MHeroic`, and `Raid40M`.
+  2. Updated `conf/mod_item_level_scaling.conf.dist` setting `ItemScaling.Dynamic.Floor.* = 5` across all dungeon, heroic, and raid categories matching AutoBalance's per-category floor of 5.
+  3. Synchronized runtime server configurations at `Server/bin/configs/modules/mod_item_level_scaling.conf.dist` and `Server/bin/configs/modules/mod_item_level_scaling.conf`.
+  4. Updated `src/ItemScalingConfig.h` default member initializers (`DynamicFloor* = 5`, `DynamicCeiling* = 0`) and `src/ItemScalingConfig.cpp` fallback option getters (`sConfigMgr->GetOption<uint32>(..., 0)` for ceilings, `5` for floors).
+  5. Added unit test assertions in `tests/test_target_level.cpp` validating dynamic level resolution under ceiling 0 and floor 5.
+  6. Added automated regression assertions in `tests/check_source.py` validating that `conf.dist` contains Ceiling 0 and Floor 5 for Dungeons, Raids, HeroicDungeons, and HeroicRaids.
+* **Regression Guard**:
+  - `python tests/check_source.py --core "../../Azerothcore server/azerothcore-wotlk"` passes, enforcing non-duplicate keys, valid syntax, and default ceiling (0) / floor (5) invariants.
+  - `tests/test_target_level.cpp` verifies boss clamping to player level (+0) and trash clamping to floor (-5).
+  - Maintained maintainer skill validation via `quick_validate.py`.
+
+---
+
+<a id="mils-010"></a>
+
+### [MILS-010] Native Reference Match Bypass & Dynamic ExcludedLevels Replacement
+
+* **Severity**: Medium (Optimization & Correctness)
+* **Component**: Target Level Resolution, Native Reference Matching, Live Prewarm & Loot Engine
+* **Status**: **RESOLVED** (2026-10-04)
+* **Affected Files**: [`src/ItemScalingTarget.h`](../src/ItemScalingTarget.h), [`src/ItemScalingFormula.h`](../src/ItemScalingFormula.h), [`src/ItemScalingFormula.cpp`](../src/ItemScalingFormula.cpp), [`src/ItemScalingLootScript.h`](../src/ItemScalingLootScript.h), [`src/ItemScalingLootScript.cpp`](../src/ItemScalingLootScript.cpp), [`src/ItemScalingConfig.h`](../src/ItemScalingConfig.h), [`src/ItemScalingConfig.cpp`](../src/ItemScalingConfig.cpp), [`src/ItemScalingLive.cpp`](../src/ItemScalingLive.cpp), [`src/ItemScalingRegistry.cpp`](../src/ItemScalingRegistry.cpp), [`src/ItemScalingCommands.cpp`](../src/ItemScalingCommands.cpp), [`conf/mod_item_level_scaling.conf.dist`](../conf/mod_item_level_scaling.conf.dist), [`Server/bin/configs/modules/mod_item_level_scaling.conf.dist`](../../Azerothcore%20server/Server/bin/configs/modules/mod_item_level_scaling.conf.dist), [`Server/bin/configs/modules/mod_item_level_scaling.conf`](../../Azerothcore%20server/Server/bin/configs/modules/mod_item_level_scaling.conf), [`tests/test_target_level.cpp`](../tests/test_target_level.cpp), [`tests/check_source.py`](../tests/check_source.py)
+* **Symptoms & Evidence**:
+  Previously, when players ran instances at native tier levels (e.g. level 70 players in Black Temple, level 60 players in Molten Core, level 20 players in Deadmines), or when items rolled with native reference levels matching the scaling target or player level, the module could still construct synthetic items, allocate live reserved slots, and stage unnecessary variant records in the database. In live prewarm (`Live.GenerationMode = 1`), items matching native reference levels consumed CPU budget ticks and allocated preview loot structs even though no scaling would be applied. Furthermore, the module relied on a manual static blacklist (`ItemScaling.ExcludedLevels = ""`) which was inflexible, error-prone, and required server restarts to adjust.
+* **Root Cause Analysis**:
+  1. The native reference match check existed only late in `scaleLootItem`, after preview objects were allocated and budget consumed in prewarm.
+  2. The check was not accessible to Mode 1 prewarm or `FindOrRequestVariant`.
+  3. Lower-level dungeons and instances with diverse boss levels (e.g. BRD: Gerstahn lvl 52 vs Thaurissan lvl 59) required checking against both target levels and player level to guarantee that original Blizzard drops drop cleanly when content is run at intended levels.
+  4. `ItemScaling.ExcludedLevels` was a static string config rather than an intrinsic, automated bypass.
+* **Resolution**:
+  1. Removed `ItemScaling.ExcludedLevels` completely from configuration templates, C++ config structs, loot scripts, and commands, replacing it with `ItemScaling.PreserveNativeLoot = 1` (default: 1).
+  2. Implemented `ItemScalingTarget::GetNativeReferenceLevel` and `ItemScalingTarget::IsNativeTargetMatch` (`nativeRef == requestedTarget || nativeRef == bracketedTarget || (playerLevel > 0 && nativeRef == playerLevel)`).
+  3. Exposed authoritative helpers in `ItemScalingFormula` (`GetNativeReferenceLevel(ItemTemplate const*)` and `IsNativeTargetMatch(ItemTemplate const*, uint8, uint8, uint8)`).
+  4. Extracted `ItemScalingLootScript::ResolveTargetLevels` to share authoritative target calculation across loot generation and prewarm.
+  5. In Mode 1 Prewarm (`ItemScalingLive::Impl::Prewarm`), added early `IsNativeTargetMatch` check before allocating preview loot or consuming budget ticks, advancing cleanly to the next item.
+  6. In Mode 2 Loot Roll (`ItemScalingLootScript::PrepareLoot`), preserved original Blizzard items on match without live tracking, packet deferral, or SQL staging.
+  7. In `ItemScalingRegistry::FindOrRequestVariant` and `ItemScalingLive::FindOrRequest`, added defense-in-depth checks ensuring zero slot allocation and zero demand ledger queuing into `scaled_item_variant_request` when generation is disabled (`Live.Enable = 0`).
+  8. Updated GM commands (`.itemscaling status` and `.itemscaling preview`) to report `PreserveNativeLoot` and native match bypass status.
+  9. Preserved `ItemScaling.UseAutoBalanceSettings = 0` as the default standalone configuration.
+* **Regression Guard**:
+  - `tests/test_target_level.cpp` compiled and executed with 12 comprehensive acceptance tests covering:
+    - High-level raids: H=70 BT native 70 (true), H=80 BT native 70 (false), H=60 MC native 60 (true), H=70 MC native 60 (false), H=70 native 80 downscale (false), BracketStep rounding (true).
+    - Lower-level instances: H=20 Deadmines boss 20 (true), H=20 Deadmines mob 18 (true), H=40 SM Herod 40 (true), H=40 SM trash 40 (true).
+    - Diverse boss levels: H=52 BRD Gerstahn native 47 (true), H=52 BRD Gerstahn native 52 (true), H=80 BRD native 47/52 (false, proper upscaling).
+    - Reference level fallback when `RequiredLevel == 0`.
+  - `tests/check_source.py` passes all assertions, verifying `PreserveNativeLoot == '1'` and complete removal of `ExcludedLevels`.
+  - Maintainer skill validation via `quick_validate.py` passed with code 0.
+
+---
+
+<a id="mils-011"></a>
+
+### [MILS-011] Dynamic Scaling Based on Current In-Instance Creature Level with Default Floor 3
+
+* **Severity**: Medium (Scaling Accuracy & Gameplay Fairness)
+* **Component**: Target Level Resolution, Creature In-Instance Level Tracking, Dynamic Floor & Ceiling Defaults
+* **Status**: **RESOLVED** (2026-10-04)
+* **Affected Files**: [`src/ItemScalingTarget.h`](../src/ItemScalingTarget.h), [`src/ItemScalingLootScript.cpp`](../src/ItemScalingLootScript.cpp), [`src/ItemScalingConfig.h`](../src/ItemScalingConfig.h), [`src/ItemScalingConfig.cpp`](../src/ItemScalingConfig.cpp), [`conf/mod_item_level_scaling.conf.dist`](../conf/mod_item_level_scaling.conf.dist), [`Server/bin/configs/modules/mod_item_level_scaling.conf`](../../Azerothcore%20server/Server/bin/configs/modules/mod_item_level_scaling.conf), [`tests/test_target_level.cpp`](../tests/test_target_level.cpp), [`tests/check_source.py`](../tests/check_source.py), [`docs/plans/current_mob_level_scaling_plan.md`](plans/current_mob_level_scaling_plan.md)
+* **Symptoms & Evidence**:
+  In dungeons and raids scaled by AutoBalance or engine scaling (e.g. Tempest Keep: The Eye, Black Temple, Molten Core), raid skull bosses (such as Void Reaver) were scaled to level 83 for level 80 players. However, loot dropped at level 75 instead of level 80 or 78.
+* **Root Cause Analysis**:
+  1. `ItemScalingLootScript::ResolveTargetLevels` computed `delta = instanceMaxLevel - creatureSourceLevel` by subtracting the native template level (73 in TBC `creature_template`) from `LFGDungeons.dbc::MaxLevel` (83 in Wrath DBC), creating a spurious cross-expansion $\Delta = 10$.
+  2. With Ceiling 0 and Floor 5, the raw target became $80 + 0 - 10 = 70$, which was clamped to the floor $80 - 5 = 75$.
+  3. `ItemScalingTarget::Resolve` checked `if (IsExternallyScaledCreature(input) && !input.realPlayersOnly)`. Because `realPlayersOnly` defaults to `true`, the live scaled level `observedCreatureLevel` was completely ignored.
+* **Resolution**:
+  1. Refactored `ItemScalingTarget::Resolve` to scale directly from the creature's in-instance effective level $L_{\text{mob}}$: $\text{RawTarget} = L_{\text{mob}} - \text{Floor}$, bounded by $\min(\text{PlayerLevel} + \text{Ceiling}, \text{MaxLevel})$.
+  2. Implemented `ResolveEffectiveCreatureLevel` in `ItemScalingLootScript.cpp`:
+     - Live combat (`creature != nullptr`): Authoritative live level `creature->GetLevel()` is used directly.
+     - Mode 1 prewarm / catalogue (`creature == nullptr`): Predicts $L_{\text{mob}}$ using boss template rank and map type (+3 for raid skull boss, +2 for dungeon boss), guaranteeing 100% target level parity between prewarm generation and live loot drops.
+     - Unscaled/standalone fallback: Evaluates unscaled creatures using the same boss rank offsets relative to player level.
+  3. Changed global default `Floor` to `3` across all dungeons, heroic dungeons, and raids in `ItemScalingConfig.h`, `ItemScalingConfig.cpp`, and configuration templates.
+     - For all raid bosses (level 83 at level 80): $83 - 3 = 80 \implies$ drops max level 80 items by default out-of-the-box.
+     - For raid trash mobs (level 80 at level 80): $80 - 3 = 77 \implies$ drops level 77 items by default.
+     - For 5-man dungeon bosses (level 82 at level 80): $82 - 3 = 79 \implies$ drops level 79 items by default (or level 80 with Floor 2 or Ceiling 3).
+     - For intended tier runs (e.g. level 70 player in TK/BT): $73 - 3 = 70 \implies$ matches native level 70 drops and triggers Native Reference Match Bypass without synthetic generation.
+* **Regression Guard**:
+  - `tests/test_target_level.cpp` covers raid bosses ($L_{\text{mob}}=83$ with Floor 3 $\implies$ 80, Floor 5 $\implies$ 78, Floor 0 $\implies$ 80), trash ($L_{\text{mob}}=80$ with Floor 3 $\implies$ 77, Floor 5 $\implies$ 75, Floor 0 $\implies$ 80), dungeon bosses ($L_{\text{mob}}=82$ with Floor 3 $\implies$ 79, Floor 2 $\implies$ 80, Floor 0 $\implies$ 80), native level 70 runs ($L_{\text{mob}}=73$ with Floor 3 $\implies$ 70 native match), chests, and fixed mode.
+  - `tests/check_source.py` passes with zero errors, validating all configuration defaults (`Floor = 3`, `Ceiling = 0`, `PreserveNativeLoot = 1`).
+  - Maintainer skill validated via `quick_validate.py`.
+
+---
+
+<a id="mils-012"></a>
+
+### [MILS-012] Configurable Weighted Linear Variance for Dynamic Floor and Ceiling (±1, ±2, ±3 Levels)
+
+* **Severity**: Low (Feature & Progression Enhancement)
+* **Component**: Target Level Resolution, Configuration Engine, Dynamic Floor & Ceiling Variance, Loot Generation
+* **Status**: **RESOLVED** (2026-10-04)
+* **Affected Files**: [`src/ItemScalingVariance.h`](../src/ItemScalingVariance.h), [`src/ItemScalingConfig.h`](../src/ItemScalingConfig.h), [`src/ItemScalingConfig.cpp`](../src/ItemScalingConfig.cpp), [`src/ItemScalingLootScript.h`](../src/ItemScalingLootScript.h), [`src/ItemScalingLootScript.cpp`](../src/ItemScalingLootScript.cpp), [`conf/mod_item_level_scaling.conf.dist`](../conf/mod_item_level_scaling.conf.dist), [`Server/bin/configs/modules/mod_item_level_scaling.conf`](../../Azerothcore%20server/Server/bin/configs/modules/mod_item_level_scaling.conf), [`tests/test_target_level.cpp`](../tests/test_target_level.cpp), [`docs/plans/dynamic_variance_floor_ceiling_plan.md`](plans/dynamic_variance_floor_ceiling_plan.md)
+* **Symptoms & Evidence**:
+  Previously, Floor and Ceiling values were static constants per instance category. In 5-man dungeons at player level 80 with Floor = 3, dungeon bosses scaled to level 82 always deterministically dropped level 79 loot ($82 - 3 = 79$). There was no mechanism for dungeon bosses to roll higher level items (e.g. level 80) or for trash mobs to drop jackpot upgrades without permanently altering global floor constants for the entire instance.
+* **Root Cause Analysis**:
+  `mod-item-level-scaling` lacked a probability variance model to dynamically shift floor and ceiling values on individual loot generation passes.
+* **Resolution**:
+  1. Created standalone header [`src/ItemScalingVariance.h`](../src/ItemScalingVariance.h) defining `struct VarianceWeights` and pure C++17 parsers `ParseWeights` and `RollDelta`.
+  2. Implemented independent master configuration toggles:
+     - `ItemScaling.Dynamic.Floor.Variance.Enable = 1` (default: 1 - Enabled)
+     - `ItemScaling.Dynamic.Ceiling.Variance.Enable = 0` (default: 0 - Disabled)
+     - `ItemScaling.Dynamic.Variance.Scope = 0` (0 = Per-Loot/Per-Boss, 1 = Per-Item)
+  3. Added per-category variance configuration strings for all 13 dungeon and raid categories, supporting named pair syntax (`"-1:20.0, -2:10.0, -3:5.0"`) and 6-element positional syntax (`"5.0, 10.0, 20.0, 0.0, 0.0, 0.0"`).
+  4. Configured default Floor variance across categories to `"-1:20.0, -2:10.0, -3:5.0"` (35% total shift chance; 65% base Floor 3):
+     - -1 delta (20%): Floor becomes 2 $\implies$ level 82 dungeon bosses drop max level 80 items.
+     - -2 delta (10%): Floor becomes 1 $\implies$ level 80 dungeon trash drops level 79 items.
+     - -3 delta (5%): Floor becomes 0 $\implies$ jackpot drop where level 80 trash drops max level 80 items.
+  5. Implemented `ItemScalingLootScript::ResolveTargetLevels` variance evaluation, passing effective clamped floor and ceiling into `ItemScalingTarget::Resolve`.
+  6. Implemented Per-Item re-rolling in `PrepareLoot::scaleLootItem` when `VarianceScope = 1`.
+  7. Mode 1 prewarm strictly uses delta 0 to ensure deterministic baseline template caching, with live on-demand generation seamlessly publishing lucky rolled variants.
+  8. Synchronized configuration template and runtime server configuration.
+* **Regression Guard**:
+  - `tests/test_target_level.cpp` includes unit tests for named pair parsing, positional parsing, deterministic interval rolls, boundary checks, and target level resolution with rolled floor and ceiling variance.
+  - `python tests/check_source.py --core "../../Azerothcore server/azerothcore-wotlk"` passes with zero duplicate config keys and all checks green.
+  - Maintainer skill validated with code 0 via `quick_validate.py`.

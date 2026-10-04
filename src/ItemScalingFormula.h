@@ -31,6 +31,9 @@ namespace ItemScalingFormula
     [[nodiscard]] bool IsValidBakedTemplate(ItemTemplate const& base, ItemTemplate const& scaled, int32 randomPropertyId);
     bool BakeRandomSuffixStats(ItemTemplate& scaledProto, ItemTemplate const* baseProto, int32 randomPropertyId, uint16 targetItemLevel, double rBudget);
 
+    [[nodiscard]] uint8 GetNativeReferenceLevel(ItemTemplate const* proto);
+    [[nodiscard]] bool IsNativeTargetMatch(ItemTemplate const* proto, uint8 requestedTarget, uint8 bracketedTarget, uint8 playerLevel = 0);
+
     [[nodiscard]] ItemTemplate CreateScaledTemplate(ItemTemplate const* baseProto, uint32 newEntry, uint8 targetEffectiveLevel, uint16 targetItemLevel, uint8 formulaVersion, uint8 highestRealPlayerLevel, int32 randomPropertyId = 0);
 }
 

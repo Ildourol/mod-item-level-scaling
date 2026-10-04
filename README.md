@@ -413,6 +413,20 @@ ItemScaling.RequiredLevel.Policy = "target"
 ItemScaling.UseAutoBalanceSettings = 0
 ItemScaling.Announce = 1
 
+# Bypass synthetic scaling when item's native level matches target or player level
+ItemScaling.PreserveNativeLoot = 1
+
+# Dynamic floor & ceiling variance
+ItemScaling.Dynamic.Floor.Variance.Enable = 1
+ItemScaling.Dynamic.Ceiling.Variance.Enable = 0
+ItemScaling.Dynamic.Variance.Scope = 0
+
+# Used for new requests when Live.Enable=0
+ItemScaling.DemandLedger.Enable = 1
+ItemScaling.ScaleDungeons = 1
+ItemScaling.ScaleRaids = 1
+ItemScaling.ScaleHeroics = 1
+ItemScaling.ScaleChests = 1
 ItemScaling.BracketStep = 1
 ```
 

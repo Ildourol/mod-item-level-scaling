@@ -4,6 +4,7 @@
 
 #include "ItemScalingFormula.h"
 #include "ItemScalingConfig.h"
+#include "ItemScalingTarget.h"
 #include "DBCfmt.h"
 #include <algorithm>
 #include <cmath>
@@ -588,6 +589,22 @@ namespace ItemScalingFormula
         return true;
     }
 
+    uint8 GetNativeReferenceLevel(ItemTemplate const* proto)
+    {
+        if (!proto)
+            return 1;
+        return ItemScalingTarget::GetNativeReferenceLevel(
+            static_cast<uint8>(proto->RequiredLevel), proto->ItemLevel);
+    }
+
+    bool IsNativeTargetMatch(ItemTemplate const* proto, uint8 requestedTarget, uint8 bracketedTarget, uint8 playerLevel)
+    {
+        if (!proto)
+            return false;
+        uint8 nativeRef = GetNativeReferenceLevel(proto);
+        return ItemScalingTarget::IsNativeTargetMatch(nativeRef, requestedTarget, bracketedTarget, playerLevel);
+    }
+
     ItemTemplate CreateScaledTemplate(ItemTemplate const* baseProto, uint32 newEntry, uint8 targetEffectiveLevel, uint16 targetItemLevel, uint8 /*formulaVersion*/, uint8 highestRealPlayerLevel, int32 randomPropertyId)
     {
         // 1. Full clone of base item template
@@ -596,12 +613,7 @@ namespace ItemScalingFormula
         // 2. Assign synthetic entry
         scaledProto.ItemId = newEntry;
 
-        uint8 l0 = static_cast<uint8>(baseProto->RequiredLevel);
-        if (l0 == 0)
-        {
-            l0 = static_cast<uint8>(std::clamp<uint32>(baseProto->ItemLevel, 1, 80));
-        }
-
+        uint8 l0 = GetNativeReferenceLevel(baseProto);
         uint8 lTarget = std::clamp<uint8>(targetEffectiveLevel, 1, 80);
 
         // 3. Assign scaled item level & required level

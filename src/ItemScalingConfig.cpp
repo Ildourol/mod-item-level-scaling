@@ -8,6 +8,7 @@
 #include "StringConvert.h"
 #include "Log.h"
 #include "Map.h"
+#include "Random.h"
 #include <string_view>
 #include <algorithm>
 
@@ -109,13 +110,13 @@ void ItemScalingConfig::Load(bool reload)
         ReqLevelPolicy = REQ_POLICY_TARGET_CAPPED_PLAYER;
     }
 
-    DynamicCeilingDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Dungeons", 5)));
+    DynamicCeilingDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Dungeons", 0)));
     DynamicFloorDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Dungeons", 3)));
-    DynamicCeilingRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Raids", 3)));
-    DynamicFloorRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Raids", 0)));
+    DynamicCeilingRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Raids", 0)));
+    DynamicFloorRaids = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Raids", 3)));
 
-    DynamicCeilingHeroicDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.HeroicDungeons", 5)));
-    DynamicFloorHeroicDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.HeroicDungeons", 0)));
+    DynamicCeilingHeroicDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.HeroicDungeons", 0)));
+    DynamicFloorHeroicDungeons = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.HeroicDungeons", 3)));
 
     DynamicCeilingHeroicDungeonsTBC = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.HeroicDungeons.TBC", DynamicCeilingHeroicDungeons)));
     DynamicFloorHeroicDungeonsTBC = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.HeroicDungeons.TBC", DynamicFloorHeroicDungeons)));
@@ -144,6 +145,79 @@ void ItemScalingConfig::Load(bool reload)
 
     DynamicCeilingRaid40M = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Ceiling.Raid40M", DynamicCeilingRaids)));
     DynamicFloorRaid40M = static_cast<uint8>(std::min<uint32>(80, sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Floor.Raid40M", DynamicFloorRaids)));
+
+    FloorVarianceEnable = sConfigMgr->GetOption<bool>("ItemScaling.Dynamic.Floor.Variance.Enable", true);
+    CeilingVarianceEnable = sConfigMgr->GetOption<bool>("ItemScaling.Dynamic.Ceiling.Variance.Enable", false);
+    VarianceScope = static_cast<uint8>(std::clamp<uint32>(
+        sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Variance.Scope", 0), 0, 1));
+
+    std::string defaultFloorVar = "-1:20.0, -2:10.0, -3:5.0";
+    std::string defaultCeilVar = "";
+
+    FloorVarianceDungeons = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Floor.Variance.Dungeons", defaultFloorVar));
+    CeilingVarianceDungeons = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Ceiling.Variance.Dungeons", defaultCeilVar));
+
+    FloorVarianceHeroicDungeons = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Floor.Variance.HeroicDungeons", defaultFloorVar));
+    CeilingVarianceHeroicDungeons = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Ceiling.Variance.HeroicDungeons", defaultCeilVar));
+
+    FloorVarianceHeroicDungeonsTBC = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Floor.Variance.HeroicDungeons.TBC", ""));
+    CeilingVarianceHeroicDungeonsTBC = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Ceiling.Variance.HeroicDungeons.TBC", ""));
+
+    FloorVarianceHeroicDungeonsWrath = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Floor.Variance.HeroicDungeons.Wrath", ""));
+    CeilingVarianceHeroicDungeonsWrath = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Ceiling.Variance.HeroicDungeons.Wrath", ""));
+
+    FloorVarianceRaids = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Floor.Variance.Raids", defaultFloorVar));
+    CeilingVarianceRaids = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Ceiling.Variance.Raids", defaultCeilVar));
+
+    FloorVarianceHeroicRaids = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Floor.Variance.HeroicRaids", ""));
+    CeilingVarianceHeroicRaids = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Ceiling.Variance.HeroicRaids", ""));
+
+    FloorVarianceRaid10M = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Floor.Variance.Raid10M", ""));
+    CeilingVarianceRaid10M = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Ceiling.Variance.Raid10M", ""));
+
+    FloorVarianceRaid10MHeroic = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Floor.Variance.Raid10MHeroic", ""));
+    CeilingVarianceRaid10MHeroic = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Ceiling.Variance.Raid10MHeroic", ""));
+
+    FloorVarianceRaid15M = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Floor.Variance.Raid15M", ""));
+    CeilingVarianceRaid15M = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Ceiling.Variance.Raid15M", ""));
+
+    FloorVarianceRaid20M = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Floor.Variance.Raid20M", ""));
+    CeilingVarianceRaid20M = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Ceiling.Variance.Raid20M", ""));
+
+    FloorVarianceRaid25M = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Floor.Variance.Raid25M", ""));
+    CeilingVarianceRaid25M = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Ceiling.Variance.Raid25M", ""));
+
+    FloorVarianceRaid25MHeroic = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Floor.Variance.Raid25MHeroic", ""));
+    CeilingVarianceRaid25MHeroic = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Ceiling.Variance.Raid25MHeroic", ""));
+
+    FloorVarianceRaid40M = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Floor.Variance.Raid40M", ""));
+    CeilingVarianceRaid40M = ParseVarianceWeights(
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Ceiling.Variance.Raid40M", ""));
 
     DynamicOverrides.clear();
 
@@ -256,18 +330,7 @@ void ItemScalingConfig::Load(bool reload)
 
     BracketStep = static_cast<uint8>(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("ItemScaling.BracketStep", 1), 1, 10));
 
-    ExcludedLevels.clear();
-    std::string excludedLevelsStr = sConfigMgr->GetOption<std::string>("ItemScaling.ExcludedLevels", "");
-    for (std::string_view token : Acore::Tokenize(excludedLevelsStr, ',', false))
-    {
-        if (Optional<uint32> lvl = Acore::StringTo<uint32>(token))
-        {
-            if (*lvl >= 1 && *lvl <= 80)
-            {
-                ExcludedLevels.insert(static_cast<uint8>(*lvl));
-            }
-        }
-    }
+    PreserveNativeLoot = sConfigMgr->GetOption<bool>("ItemScaling.PreserveNativeLoot", true);
 
     ExcludedMapIds.clear();
     std::string excludedMaps = sConfigMgr->GetOption<std::string>("ItemScaling.ExcludedMapIds", "");
@@ -318,11 +381,6 @@ bool ItemScalingConfig::IsQualityEnabled(uint32 quality) const
     }
 }
 
-bool ItemScalingConfig::IsLevelExcluded(uint8 level) const
-{
-    return ExcludedLevels.find(level) != ExcludedLevels.end();
-}
-
 bool ItemScalingConfig::IsMapExcluded(uint32 mapId) const
 {
     return ExcludedMapIds.find(mapId) != ExcludedMapIds.end();
@@ -340,7 +398,8 @@ std::string ItemScalingConfig::GetInstanceCategoryDescription(Map const* map) co
 
     if (map->IsRaid())
     {
-        uint32 maxPlayers = map->GetMaxPlayers();
+        InstanceMap const* instanceMap = map->ToInstanceMap();
+        uint32 maxPlayers = instanceMap ? instanceMap->GetMaxPlayers() : 0;
         bool isHeroic = map->IsHeroic();
         if (isHeroic)
         {
@@ -509,7 +568,8 @@ uint8 ItemScalingConfig::GetDynamicFloor(Map const* map) const
     bool isRaid = map->IsRaid();
     bool isHeroic = map->IsHeroic();
     uint32 expansion = map->GetEntry() ? map->GetEntry()->Expansion() : 0;
-    uint32 maxPlayers = map->GetMaxPlayers();
+    InstanceMap const* instanceMap = map->ToInstanceMap();
+    uint32 maxPlayers = instanceMap ? instanceMap->GetMaxPlayers() : 0;
     uint32 mapId = map->GetId();
     return GetDynamicFloor(isRaid, isHeroic, expansion, maxPlayers, mapId);
 }
@@ -522,9 +582,149 @@ uint8 ItemScalingConfig::GetDynamicCeiling(Map const* map) const
     bool isRaid = map->IsRaid();
     bool isHeroic = map->IsHeroic();
     uint32 expansion = map->GetEntry() ? map->GetEntry()->Expansion() : 0;
-    uint32 maxPlayers = map->GetMaxPlayers();
+    InstanceMap const* instanceMap = map->ToInstanceMap();
+    uint32 maxPlayers = instanceMap ? instanceMap->GetMaxPlayers() : 0;
     uint32 mapId = map->GetId();
     return GetDynamicCeiling(isRaid, isHeroic, expansion, maxPlayers, mapId);
+}
+
+VarianceWeights ItemScalingConfig::ParseVarianceWeights(std::string const& configStr)
+{
+    return ItemScalingVariance::ParseWeights(configStr);
+}
+
+int8 ItemScalingConfig::RollVarianceDelta(VarianceWeights const& weights, float randomRoll)
+{
+    float roll = randomRoll;
+    if (roll < 0.0f)
+    {
+        float total = weights.TotalWeight();
+        float maxRoll = (total > 100.0f) ? total : 100.0f;
+        roll = frand(0.0f, maxRoll);
+    }
+    return ItemScalingVariance::RollDelta(weights, roll);
+}
+
+VarianceWeights ItemScalingConfig::GetDynamicFloorVarianceWeights(bool isRaid, bool isHeroic, uint32 expansion, uint32 maxPlayers, uint32 /*mapId*/) const
+{
+    if (isRaid)
+    {
+        if (isHeroic)
+        {
+            if (maxPlayers != 0 && maxPlayers <= 10 && FloorVarianceRaid10MHeroic.HasAny())
+                return FloorVarianceRaid10MHeroic;
+            if (maxPlayers != 0 && maxPlayers <= 25 && FloorVarianceRaid25MHeroic.HasAny())
+                return FloorVarianceRaid25MHeroic;
+            if (FloorVarianceHeroicRaids.HasAny())
+                return FloorVarianceHeroicRaids;
+            return FloorVarianceRaids;
+        }
+        else
+        {
+            if (maxPlayers != 0)
+            {
+                if (maxPlayers <= 10 && FloorVarianceRaid10M.HasAny())
+                    return FloorVarianceRaid10M;
+                if (maxPlayers == 15 && FloorVarianceRaid15M.HasAny())
+                    return FloorVarianceRaid15M;
+                if (maxPlayers == 20 && FloorVarianceRaid20M.HasAny())
+                    return FloorVarianceRaid20M;
+                if (maxPlayers <= 25 && FloorVarianceRaid25M.HasAny())
+                    return FloorVarianceRaid25M;
+                if (maxPlayers <= 40 && FloorVarianceRaid40M.HasAny())
+                    return FloorVarianceRaid40M;
+            }
+            return FloorVarianceRaids;
+        }
+    }
+
+    if (isHeroic && expansion > 0)
+    {
+        if (expansion == 1 && FloorVarianceHeroicDungeonsTBC.HasAny())
+            return FloorVarianceHeroicDungeonsTBC;
+        if (expansion == 2 && FloorVarianceHeroicDungeonsWrath.HasAny())
+            return FloorVarianceHeroicDungeonsWrath;
+        if (FloorVarianceHeroicDungeons.HasAny())
+            return FloorVarianceHeroicDungeons;
+        return FloorVarianceDungeons;
+    }
+
+    return FloorVarianceDungeons;
+}
+
+VarianceWeights ItemScalingConfig::GetDynamicCeilingVarianceWeights(bool isRaid, bool isHeroic, uint32 expansion, uint32 maxPlayers, uint32 /*mapId*/) const
+{
+    if (isRaid)
+    {
+        if (isHeroic)
+        {
+            if (maxPlayers != 0 && maxPlayers <= 10 && CeilingVarianceRaid10MHeroic.HasAny())
+                return CeilingVarianceRaid10MHeroic;
+            if (maxPlayers != 0 && maxPlayers <= 25 && CeilingVarianceRaid25MHeroic.HasAny())
+                return CeilingVarianceRaid25MHeroic;
+            if (CeilingVarianceHeroicRaids.HasAny())
+                return CeilingVarianceHeroicRaids;
+            return CeilingVarianceRaids;
+        }
+        else
+        {
+            if (maxPlayers != 0)
+            {
+                if (maxPlayers <= 10 && CeilingVarianceRaid10M.HasAny())
+                    return CeilingVarianceRaid10M;
+                if (maxPlayers == 15 && CeilingVarianceRaid15M.HasAny())
+                    return CeilingVarianceRaid15M;
+                if (maxPlayers == 20 && CeilingVarianceRaid20M.HasAny())
+                    return CeilingVarianceRaid20M;
+                if (maxPlayers <= 25 && CeilingVarianceRaid25M.HasAny())
+                    return CeilingVarianceRaid25M;
+                if (maxPlayers <= 40 && CeilingVarianceRaid40M.HasAny())
+                    return CeilingVarianceRaid40M;
+            }
+            return CeilingVarianceRaids;
+        }
+    }
+
+    if (isHeroic && expansion > 0)
+    {
+        if (expansion == 1 && CeilingVarianceHeroicDungeonsTBC.HasAny())
+            return CeilingVarianceHeroicDungeonsTBC;
+        if (expansion == 2 && CeilingVarianceHeroicDungeonsWrath.HasAny())
+            return CeilingVarianceHeroicDungeonsWrath;
+        if (CeilingVarianceHeroicDungeons.HasAny())
+            return CeilingVarianceHeroicDungeons;
+        return CeilingVarianceDungeons;
+    }
+
+    return CeilingVarianceDungeons;
+}
+
+VarianceWeights ItemScalingConfig::GetDynamicFloorVarianceWeights(Map const* map) const
+{
+    if (!map)
+        return FloorVarianceDungeons;
+
+    bool isRaid = map->IsRaid();
+    bool isHeroic = map->IsHeroic();
+    uint32 expansion = map->GetEntry() ? map->GetEntry()->Expansion() : 0;
+    InstanceMap const* instanceMap = map->ToInstanceMap();
+    uint32 maxPlayers = instanceMap ? instanceMap->GetMaxPlayers() : 0;
+    uint32 mapId = map->GetId();
+    return GetDynamicFloorVarianceWeights(isRaid, isHeroic, expansion, maxPlayers, mapId);
+}
+
+VarianceWeights ItemScalingConfig::GetDynamicCeilingVarianceWeights(Map const* map) const
+{
+    if (!map)
+        return CeilingVarianceDungeons;
+
+    bool isRaid = map->IsRaid();
+    bool isHeroic = map->IsHeroic();
+    uint32 expansion = map->GetEntry() ? map->GetEntry()->Expansion() : 0;
+    InstanceMap const* instanceMap = map->ToInstanceMap();
+    uint32 maxPlayers = instanceMap ? instanceMap->GetMaxPlayers() : 0;
+    uint32 mapId = map->GetId();
+    return GetDynamicCeilingVarianceWeights(isRaid, isHeroic, expansion, maxPlayers, mapId);
 }
 
 void ItemScalingConfig::ParseItemScalingDynamicOverrides(std::string const& configStr)

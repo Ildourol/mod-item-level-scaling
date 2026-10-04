@@ -60,3 +60,74 @@ The live transaction saves the full normalized template, exact mapping, identity
 Random mode defaults to skip. Opt-in baking accepts only representable stat and resistance enchantments, validates DBC entries and integer bounds, and clears random metadata only after successful baking. Startup validation explicitly accepts cleared random fields for baked keys. Generator revision 2 separates the checked formula from earlier issued templates.
 
 Playerbots reads live templates for loot and gear evaluation. Its startup autogear catalogue is deliberately left alone and discovers promoted entries after the next restart.
+
+## Native Reference Match Bypass & Loot Preservation
+
+When `ItemScaling.PreserveNativeLoot = 1` (the default), the module dynamically identifies items whose native reference level matches the scaling target or player level, dropping the original Blizzard item directly and avoiding unnecessary synthetic variant allocation.
+
+```mermaid
+flowchart TD
+    A[Evaluate Item Candidate] --> B[GetNativeReferenceLevel]
+    B --> C{PreserveNativeLoot && IsNativeTargetMatch?}
+    C -->|Yes: native == target or player| D[Preserve Original Blizzard Item]
+    D --> E[Zero Slot Allocation, Zero DB Staging, Zero Demand Queuing]
+    C -->|No: levels differ| F[Proceed with Live / Registry Scaling Pipeline]
+```
+
+1. **Native Reference Calculation**:
+   - Uses `RequiredLevel` when non-zero (`requiredLevel > 0 ? requiredLevel : std::clamp(itemLevel, 1, 80)`).
+2. **Authoritative Matching**:
+   - `IsNativeTargetMatch(nativeRef, requestedTarget, bracketedTarget, playerLevel)` evaluates whether `nativeRef` matches `requestedTarget`, `bracketedTarget`, or `playerLevel` (supporting lower-level instances and diverse boss dungeons such as Blackrock Depths).
+3. **Mode 1 Prewarm Optimization**:
+   - Prior to allocating `Loot preview` structs or invoking `PrepareLoot`, catalogue prewarm resolves the source's target levels using `ItemScalingLootScript::ResolveTargetLevels`. Items matching native reference levels are skipped immediately, conserving per-tick prewarm budget and preventing phantom variant generation.
+4. **Mode 2 & Non-Live / Offline Mode**:
+   - Rolled items matching native reference levels return immediately from `scaleLootItem`, dropping original Blizzard items natively.
+   - `ItemScalingRegistry::FindOrRequestVariant` enforces a defense-in-depth bypass, guaranteeing that when `ItemScaling.Live.Enable = 0` (or `DemandLedger.Enable = 0`), no demand rows are inserted into `scaled_item_variant_request`.
+5. **Replacement of `ExcludedLevels`**:
+   - Replaces the legacy manual `ItemScaling.ExcludedLevels` blacklist with dynamic, intrinsic native-match preservation.
+
+## Dynamic Scaling Based on In-Instance Mob Level
+
+In dynamic scaling mode, loot targets are calculated directly from the creature's in-instance effective level ($L_{\text{mob}}$) rather than unscaled database templates:
+
+$$\text{RawTarget} = L_{\text{mob}} - \text{Floor}$$
+$$\text{Target} = \text{clamp}\Big(\text{RawTarget},\ \text{MinLevel},\ \min(\text{PlayerLevel} + \text{Ceiling},\ \text{MaxLevel})\Big)$$
+
+1. **Default Dynamic Floor = 3**:
+   - The global default for all `ItemScaling.Dynamic.Floor.*` settings is `3` (Ceiling = `0`).
+   - All raid skull bosses ($L_{\text{mob}} = 80 + 3 = 83$ at player level 80) drop max level 80 items by default ($83 - 3 = 80$).
+   - All raid trash mobs ($L_{\text{mob}} = 80$) drop level 77 items by default ($80 - 3 = 77$).
+   - 5-man dungeon bosses ($L_{\text{mob}} = 80 + 2 = 82$) drop level 79 items by default ($82 - 3 = 79$).
+2. **Authoritative Parity Between Prewarm & Live Combat**:
+   - **Live Combat**: `ResolveEffectiveCreatureLevel` reads the live scaled level `creature->GetLevel()`.
+   - **Mode 1 Prewarm**: Calculates the identical $L_{\text{mob}}$ via boss template rank and map type (+3 for raid skull boss, +2 for dungeon boss), guaranteeing 100% target level parity.
+3. **Native Content Integration**:
+   - A level 70 player running Tempest Keep ($L_{\text{mob}} = 73$) with default `Floor = 3` produces $\text{Target} = 70$.
+   - Because the native drop is level 70, the Native Reference Match Bypass automatically triggers, dropping original Blizzard items without generating synthetic variants.
+
+## Dynamic Floor & Ceiling Variance (Randomized Level Shifts)
+
+To introduce controlled randomness and excitement to dungeon and raid progression (e.g. Warforged / lucky boss drops), the module supports configurable linear percentage variance for shifts of $\pm 1, \pm 2, \pm 3$ levels on dynamic floor and ceiling calculations.
+
+### Mechanics & Delta Mapping
+- **Floor Variance ($d_F \in \{-3, -2, -1, 0, +1, +2, +3\}$)**:
+  - $F_{\text{eff}} = \max(0, F_{\text{base}} + d_F)$
+  - Target formula subtracts floor: $\text{RawTarget} = L_{\text{mob}} - F_{\text{eff}}$.
+  - **Negative delta ($d_F < 0$) = UPGRADE**: Reduces the floor, raising the item drop level:
+    - $-1$ shift: Floor becomes $2 \implies$ level 82 dungeon boss drops level 80 loot ($82 - 2 = 80$).
+    - $-2$ shift: Floor becomes $1 \implies$ level 80 dungeon trash drops level 79 loot ($80 - 1 = 79$).
+    - $-3$ shift: Floor becomes $0 \implies$ Jackpot! Level 80 dungeon/raid trash drops max level 80 loot ($80 - 0 = 80$).
+- **Ceiling Variance ($d_C \in \{-3, -2, -1, 0, +1, +2, +3\}$)**:
+  - $C_{\text{eff}} = \max(0, C_{\text{base}} + d_C)$
+  - Ceiling cap: $\min(P_{\text{player}} + C_{\text{eff}}, \text{MaxLevel})$.
+  - Positive delta ($d_C > 0$) raises the ceiling above player level. (Disabled by default, base ceiling remains 0).
+
+### Defaults & Distribution
+- `ItemScaling.Dynamic.Floor.Variance.Enable = 1` (Enabled by default)
+- `ItemScaling.Dynamic.Ceiling.Variance.Enable = 0` (Disabled by default)
+- Default Floor Variance across categories: `"-1:20.0, -2:10.0, -3:5.0"` (35% total shift chance; 65% base Floor 3 drop).
+- `ItemScaling.Dynamic.Variance.Scope`:
+  - `0` (Default): Per-Loot / Per-Boss (the entire creature corpse shares the rolled floor/ceiling).
+  - `1`: Per-Item (each scalable item on the corpse rolls independently).
+- **Prewarm Invariant**: Mode 1 prewarm strictly uses delta 0 to ensure deterministic canonical baseline templates in memory; live on-demand engine publishes lucky rolled variants seamlessly.
+

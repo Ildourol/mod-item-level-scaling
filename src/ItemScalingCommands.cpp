@@ -111,6 +111,7 @@ public:
             sItemScalingConfig->DynamicFloorRaid25MHeroic, sItemScalingConfig->DynamicCeilingRaid25MHeroic,
             sItemScalingConfig->DynamicFloorRaid40M, sItemScalingConfig->DynamicCeilingRaid40M);
         handler->PSendSysMessage("Per-Instance Overrides: {} configured", sItemScalingConfig->DynamicOverrides.size());
+        handler->PSendSysMessage("Preserve Native Loot: {}", sItemScalingConfig->PreserveNativeLoot ? "|cff00ff00ENABLED (Matches drop original Blizzard items)|r" : "|cffff0000DISABLED|r");
         handler->PSendSysMessage("Directional Scaling: ScaleUp={}, ScaleDown={}", sItemScalingConfig->ScaleUp ? "Yes" : "No", sItemScalingConfig->ScaleDown ? "Yes" : "No");
         handler->PSendSysMessage("RealPlayersOnly: {}, IncludeGameMasters: {}", sItemScalingConfig->RealPlayersOnly ? "Yes" : "No", sItemScalingConfig->IncludeGameMasters ? "Yes" : "No");
         handler->PSendSysMessage("RequiredLevel Policy: {}", GetPolicyName(sItemScalingConfig->ReqLevelPolicy));
@@ -147,11 +148,7 @@ public:
             lTarget = player->GetLevel();
         }
 
-        uint8 origRefLevel = static_cast<uint8>(item->RequiredLevel);
-        if (origRefLevel == 0)
-        {
-            origRefLevel = static_cast<uint8>(std::clamp<uint32>(item->ItemLevel, 1, 80));
-        }
+        uint8 origRefLevel = ItemScalingFormula::GetNativeReferenceLevel(item);
 
         handler->PSendSysMessage("|cff3399ff=== [Item Scaling Preview] ===|r");
         handler->PSendSysMessage("Item: |cffffff00{}|r (ID: {}, Quality: {}, Type: {}/{})",
@@ -179,14 +176,9 @@ public:
             handler->PSendSysMessage("|cffff8000[NOTE]|r Item ID {} is explicitly excluded in configuration.", item->ItemId);
         }
 
-        if (sItemScalingConfig->IsLevelExcluded(origRefLevel))
+        if (sItemScalingConfig->PreserveNativeLoot && ItemScalingFormula::IsNativeTargetMatch(item, lTarget, lTarget))
         {
-            handler->PSendSysMessage("|cffff8000[NOTE]|r Native level {} is in ItemScaling.ExcludedLevels.", origRefLevel);
-        }
-
-        if (origRefLevel == lTarget)
-        {
-            handler->PSendSysMessage("|cffff8000[NOTE]|r Native level {} matches target level {}. Original item drops without scaling.", origRefLevel, lTarget);
+            handler->PSendSysMessage("|cffff8000[NOTE]|r Native level {} matches target level {}. Original item drops natively without synthetic scaling.", origRefLevel, lTarget);
         }
 
         if (!sItemScalingConfig->ScaleDown && lTarget < origRefLevel)

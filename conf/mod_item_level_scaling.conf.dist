@@ -110,17 +110,18 @@ ItemScaling.MinLevel = 1
 ItemScaling.MaxLevel = 80
 
 #
-#    ItemScaling.ExcludedLevels
-#        Description: Comma-separated list of item native levels explicitly excluded from item scaling.
-#                     Note: Items where native level matches target level (e.g., native 80 to 80,
-#                     native 70 to 70, native 60 to 60) are already automatically bypassed without
-#                     scaling, preserving original Blizzard drops.
-#                     Leaving this empty ("") ensures lower-level drops (e.g., Molten Core level 60
-#                     items) will properly scale up to level 80 for level 80 players.
-#        Default:     ""
+#    ItemScaling.PreserveNativeLoot
+#        Description: Skip synthetic variant generation and drop original Blizzard items when an item's
+#                     native reference level matches the scaling target or player level
+#                     (e.g., native 80 to 80, native 70 to 70, native 40 to 40, native 20 to 20).
+#                     Replaces legacy ExcludedLevels with automatic, dynamic native-match detection.
+#                     Works in both Live modes (Mode 1 Prewarm and Mode 2 Drop) as well as offline/legacy mode.
+#        Default:     1 - Enabled (drop original items and skip synthetic generation)
+#                     0 - Disabled (generate synthetic variants even when levels match)
 #
 
-ItemScaling.ExcludedLevels = ""
+ItemScaling.PreserveNativeLoot = 1
+
 
 #
 #    ItemScaling.RealPlayersOnly
@@ -265,16 +266,17 @@ ItemScaling.RequiredLevel.Policy = "target"
 
 #
 #    Dynamic Scaling Floor and Ceiling
-#        Description: In dynamic mode, controls how many levels below and above the highest real player (H)
-#                     a creature's effective level is allowed to scale.
-#                     Floor:   levels below H (e.g. 5 means trash scales down to at most H - 5)
-#                     Ceiling: levels above H (e.g. 3 means boss scales up to at most H + 3)
+#        Description: In dynamic mode, controls how items scale relative to the creature's in-instance level (L_mob).
+#                     Floor:   levels subtracted from L_mob (e.g. 3 means raid boss at 80+3=83 drops level 80 loot,
+#                              trash at 80 drops level 77 loot; 5 means raid boss drops level 78 loot; 0 means capped at player level)
+#                     Ceiling: upper clamp relative to player level (PlayerLevel + Ceiling)
+#                     Default: Floor = 3, Ceiling = 0
 #
 
-ItemScaling.Dynamic.Ceiling.Dungeons = 5
+ItemScaling.Dynamic.Ceiling.Dungeons = 0
 ItemScaling.Dynamic.Floor.Dungeons = 3
-ItemScaling.Dynamic.Ceiling.Raids = 3
-ItemScaling.Dynamic.Floor.Raids = 0
+ItemScaling.Dynamic.Ceiling.Raids = 0
+ItemScaling.Dynamic.Floor.Raids = 3
 
 #
 #    Dynamic Scaling for Heroic Dungeons (TBC & Wrath)
@@ -284,14 +286,15 @@ ItemScaling.Dynamic.Floor.Raids = 0
 #                     TBC: The Burning Crusade heroic dungeons (expansion 1)
 #                     Wrath: Wrath of the Lich King heroic dungeons (expansion 2)
 #                     HeroicDungeons serves as the general fallback for custom/other heroic dungeons.
+#        Default:     Ceiling = 0, Floor = 3
 #
 
-ItemScaling.Dynamic.Ceiling.HeroicDungeons = 5
-ItemScaling.Dynamic.Floor.HeroicDungeons = 0
-ItemScaling.Dynamic.Ceiling.HeroicDungeons.TBC = 5
-ItemScaling.Dynamic.Floor.HeroicDungeons.TBC = 0
-ItemScaling.Dynamic.Ceiling.HeroicDungeons.Wrath = 5
-ItemScaling.Dynamic.Floor.HeroicDungeons.Wrath = 0
+ItemScaling.Dynamic.Ceiling.HeroicDungeons = 0
+ItemScaling.Dynamic.Floor.HeroicDungeons = 3
+ItemScaling.Dynamic.Ceiling.HeroicDungeons.TBC = 0
+ItemScaling.Dynamic.Floor.HeroicDungeons.TBC = 3
+ItemScaling.Dynamic.Ceiling.HeroicDungeons.Wrath = 0
+ItemScaling.Dynamic.Floor.HeroicDungeons.Wrath = 3
 
 #
 #    Dynamic Scaling for Raid Categories (1-to-1 Parity with AutoBalance)
@@ -303,30 +306,30 @@ ItemScaling.Dynamic.Floor.HeroicDungeons.Wrath = 0
 #                     Raid25M / Raid25MHeroic: 25-player raids
 #                     Raid40M: 40-player raids (e.g. Molten Core, Blackwing Lair, AQ40)
 #                     HeroicRaids serves as the generic fallback for heroic raids.
-#        Default:     Ceiling = 3, Floor = 0
+#        Default:     Ceiling = 0, Floor = 3
 #
 
-ItemScaling.Dynamic.Ceiling.HeroicRaids = 3
-ItemScaling.Dynamic.Floor.HeroicRaids = 0
+ItemScaling.Dynamic.Ceiling.HeroicRaids = 0
+ItemScaling.Dynamic.Floor.HeroicRaids = 3
 
-ItemScaling.Dynamic.Ceiling.Raid10M = 3
-ItemScaling.Dynamic.Floor.Raid10M = 0
-ItemScaling.Dynamic.Ceiling.Raid10MHeroic = 3
-ItemScaling.Dynamic.Floor.Raid10MHeroic = 0
+ItemScaling.Dynamic.Ceiling.Raid10M = 0
+ItemScaling.Dynamic.Floor.Raid10M = 3
+ItemScaling.Dynamic.Ceiling.Raid10MHeroic = 0
+ItemScaling.Dynamic.Floor.Raid10MHeroic = 3
 
-ItemScaling.Dynamic.Ceiling.Raid15M = 3
-ItemScaling.Dynamic.Floor.Raid15M = 0
+ItemScaling.Dynamic.Ceiling.Raid15M = 0
+ItemScaling.Dynamic.Floor.Raid15M = 3
 
-ItemScaling.Dynamic.Ceiling.Raid20M = 3
-ItemScaling.Dynamic.Floor.Raid20M = 0
+ItemScaling.Dynamic.Ceiling.Raid20M = 0
+ItemScaling.Dynamic.Floor.Raid20M = 3
 
-ItemScaling.Dynamic.Ceiling.Raid25M = 3
-ItemScaling.Dynamic.Floor.Raid25M = 0
-ItemScaling.Dynamic.Ceiling.Raid25MHeroic = 3
-ItemScaling.Dynamic.Floor.Raid25MHeroic = 0
+ItemScaling.Dynamic.Ceiling.Raid25M = 0
+ItemScaling.Dynamic.Floor.Raid25M = 3
+ItemScaling.Dynamic.Ceiling.Raid25MHeroic = 0
+ItemScaling.Dynamic.Floor.Raid25MHeroic = 3
 
-ItemScaling.Dynamic.Ceiling.Raid40M = 3
-ItemScaling.Dynamic.Floor.Raid40M = 0
+ItemScaling.Dynamic.Ceiling.Raid40M = 0
+ItemScaling.Dynamic.Floor.Raid40M = 3
 
 #
 #    Per-Instance Dynamic Level Overrides
@@ -339,6 +342,68 @@ ItemScaling.Dynamic.Floor.Raid40M = 0
 #
 
 ItemScaling.Dynamic.PerInstance = ""
+
+#
+#    Dynamic Floor & Ceiling Variance (Randomized Level Shifts)
+#        Description: Allows loot generation to roll configurable percentage chances for shifts of
+#                     -3, -2, -1, +1, +2, +3 levels on Dynamic Floor and Ceiling.
+#
+#                     FLOOR VARIANCE:
+#                     Because target level is (L_mob - Floor), negative floor deltas REDUCE the floor,
+#                     which increases the drop level (favorable / lucky drops for players!):
+#                       -1 shift: Floor becomes 2 -> Level 82 dungeon boss drops level 80 loot!
+#                       -2 shift: Floor becomes 1 -> Level 80 dungeon trash drops level 79 loot!
+#                       -3 shift: Floor becomes 0 -> Jackpot! Level 80 trash drops level 80 loot!
+#                       Remaining %: Uses standard base Floor (3), dropping level 79 loot from boss.
+#
+#                     CEILING VARIANCE:
+#                     Because ceiling caps max loot level (PlayerLevel + Ceiling), positive ceiling deltas
+#                     expand the upper cap above player level. (Disabled by default, base ceiling remains 0).
+#
+#                     FORMAT SYNTAX:
+#                     Accepts named pair syntax (omitted values default to 0%):
+#                       "-1:20.0, -2:10.0, -3:5.0"
+#                     Or 6-element positional comma-separated floats (-3, -2, -1, +1, +2, +3):
+#                       "5.0, 10.0, 20.0, 0.0, 0.0, 0.0"
+#                     Percentages do NOT need to sum to 100. Any remaining percentage out of 100%
+#                     automatically uses the unmodified base floor/ceiling.
+#
+#        Defaults:    Floor.Variance.Enable = 1 (Enabled)
+#                     Ceiling.Variance.Enable = 0 (Disabled)
+#                     Variance.Scope = 0 (0 = Per-Loot / Per-Boss, 1 = Per-Item)
+#
+
+ItemScaling.Dynamic.Floor.Variance.Enable = 1
+ItemScaling.Dynamic.Ceiling.Variance.Enable = 0
+ItemScaling.Dynamic.Variance.Scope = 0
+
+ItemScaling.Dynamic.Floor.Variance.Dungeons = "-1:20.0, -2:10.0, -3:5.0"
+ItemScaling.Dynamic.Floor.Variance.HeroicDungeons = "-1:20.0, -2:10.0, -3:5.0"
+ItemScaling.Dynamic.Floor.Variance.HeroicDungeons.TBC = ""
+ItemScaling.Dynamic.Floor.Variance.HeroicDungeons.Wrath = ""
+ItemScaling.Dynamic.Floor.Variance.Raids = "-1:20.0, -2:10.0, -3:5.0"
+ItemScaling.Dynamic.Floor.Variance.HeroicRaids = ""
+ItemScaling.Dynamic.Floor.Variance.Raid10M = ""
+ItemScaling.Dynamic.Floor.Variance.Raid10MHeroic = ""
+ItemScaling.Dynamic.Floor.Variance.Raid15M = ""
+ItemScaling.Dynamic.Floor.Variance.Raid20M = ""
+ItemScaling.Dynamic.Floor.Variance.Raid25M = ""
+ItemScaling.Dynamic.Floor.Variance.Raid25MHeroic = ""
+ItemScaling.Dynamic.Floor.Variance.Raid40M = ""
+
+ItemScaling.Dynamic.Ceiling.Variance.Dungeons = ""
+ItemScaling.Dynamic.Ceiling.Variance.HeroicDungeons = ""
+ItemScaling.Dynamic.Ceiling.Variance.HeroicDungeons.TBC = ""
+ItemScaling.Dynamic.Ceiling.Variance.HeroicDungeons.Wrath = ""
+ItemScaling.Dynamic.Ceiling.Variance.Raids = ""
+ItemScaling.Dynamic.Ceiling.Variance.HeroicRaids = ""
+ItemScaling.Dynamic.Ceiling.Variance.Raid10M = ""
+ItemScaling.Dynamic.Ceiling.Variance.Raid10MHeroic = ""
+ItemScaling.Dynamic.Ceiling.Variance.Raid15M = ""
+ItemScaling.Dynamic.Ceiling.Variance.Raid20M = ""
+ItemScaling.Dynamic.Ceiling.Variance.Raid25M = ""
+ItemScaling.Dynamic.Ceiling.Variance.Raid25MHeroic = ""
+ItemScaling.Dynamic.Ceiling.Variance.Raid40M = ""
 
 #
 #    ItemScaling.UseAutoBalanceSettings

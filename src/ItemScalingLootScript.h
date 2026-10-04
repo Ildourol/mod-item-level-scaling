@@ -8,7 +8,9 @@
 #include "MiscScript.h"
 
 class Map;
+class Creature;
 struct CreatureTemplate;
+namespace ItemScalingTarget { struct Input; }
 
 class ItemScalingLootScript : public MiscScript
 {
@@ -16,6 +18,10 @@ public:
     ItemScalingLootScript();
 
     static Player* GetEligibleOwner(Map const* map);
+    static bool ResolveTargetLevels(Map const* map, Player const* lootOwner,
+        CreatureTemplate const* sourceOverride, Creature const* creature,
+        uint8& outRequestedTarget, uint8& outBracketedTarget, uint8& outHighestRealPlayerLevel,
+        bool prewarm = false, ItemScalingTarget::Input* outTargetInput = nullptr);
     static void PrepareLoot(Loot* loot, LootStore const& store, Player* owner,
         CreatureTemplate const* sourceOverride = nullptr, bool prewarm = false);
 

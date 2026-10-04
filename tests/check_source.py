@@ -60,6 +60,17 @@ options = re.findall(r'^(ItemScaling\.[\w.]+)\s*=\s*(.*)$', config, re.M)
 assert len(options) == len(dict(options)), 'Duplicate config keys'
 assert dict(options)['ItemScaling.Live.GenerationMode'].strip() == '1'
 assert dict(options)['ItemScaling.RandomSuffix.Mode'].strip() == '0'
+assert dict(options)['ItemScaling.Dynamic.Ceiling.Dungeons'].strip() == '0'
+assert dict(options)['ItemScaling.Dynamic.Floor.Dungeons'].strip() == '3'
+assert dict(options)['ItemScaling.Dynamic.Ceiling.Raids'].strip() == '0'
+assert dict(options)['ItemScaling.Dynamic.Floor.Raids'].strip() == '3'
+assert dict(options)['ItemScaling.Dynamic.Ceiling.HeroicDungeons'].strip() == '0'
+assert dict(options)['ItemScaling.Dynamic.Floor.HeroicDungeons'].strip() == '3'
+assert dict(options)['ItemScaling.Dynamic.Ceiling.HeroicRaids'].strip() == '0'
+assert dict(options)['ItemScaling.Dynamic.Floor.HeroicRaids'].strip() == '3'
+assert 'ItemScaling.ExcludedLevels' not in dict(options), 'ItemScaling.ExcludedLevels should be removed'
+assert dict(options)['ItemScaling.PreserveNativeLoot'].strip() == '1'
+
 for sql in (module / 'data/sql').rglob('*.sql'):
     assert not re.search(r'ALTER TABLE[^;]*\b(?:ADD COLUMN IF NOT EXISTS|DROP KEY IF EXISTS)\b', sql.read_text(), re.I)
 registry = (module / 'src/ItemScalingRegistry.cpp').read_text()

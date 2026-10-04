@@ -804,6 +804,9 @@ uint32 ItemScalingRegistry::FindOrRequestVariant(ItemTemplate const* baseProto, 
 {
     if (!baseProto || !_initialized.load(std::memory_order_acquire) || _syntheticEntries.count(baseProto->ItemId))
         return 0;
+    if (sItemScalingConfig->PreserveNativeLoot &&
+        ItemScalingFormula::IsNativeTargetMatch(baseProto, targetEffectiveLevel, targetEffectiveLevel, highestRealPlayerLevel))
+        return 0;
     uint8 required = ItemScalingFormula::CalculateRequiredLevel(baseProto, targetEffectiveLevel, highestRealPlayerLevel);
     VariantKey key{baseProto->ItemId, targetEffectiveLevel, targetItemLevel, formulaVersion,
         ITEM_SCALING_GENERATOR_REVISION, required, randomPropertyId};

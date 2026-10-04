@@ -15,6 +15,7 @@
 ### Phase 2: Runtime Stabilization & Invariant Hardening (Current)
 - [x] Synchronize module issue tracker with central `COMMANDER/ISSUES.md` catalog.
 - [x] Deploy standardized AI Maintainer skills and architectural documentation.
+- [x] Native reference match bypass and dynamic native loot preservation ([MILS-010](ISSUES.md#mils-010)).
 - [ ] Implement automated regression test cases and telemetry monitoring.
 
 ### Phase 3: Feature Expansion & Community Refinements (Upcoming)

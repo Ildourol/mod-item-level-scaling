@@ -355,6 +355,9 @@ uint32 ItemScalingLive::FindOrRequest(ItemTemplate const& base, VariantKey const
     std::lock_guard<std::mutex> lock(_impl->mutex);
     if (!_impl->enabled || !sItemScalingConfig->Enable || _impl->owned.count(base.ItemId))
         return 0;
+    if (sItemScalingConfig->PreserveNativeLoot &&
+        ItemScalingFormula::IsNativeTargetMatch(&base, key.targetEffectiveLevel, key.targetEffectiveLevel, playerLevel))
+        return 0;
     auto it = _impl->requests.find(key);
     if (it != _impl->requests.end())
         return it->second.state == Impl::State::Ready ? it->second.scaled.ItemId : 0;
@@ -733,9 +736,33 @@ void ItemScalingLive::Impl::Prewarm(uint32 budget, std::map<std::pair<uint32, ui
                 }
                 uint32 entry = source.items[visit.itemIndex];
                 ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entry);
+                if (!proto)
+                {
+                    ++visit.itemIndex;
+                    visit.rollIndex = 0;
+                    continue;
+                }
+
+                if (sItemScalingConfig->PreserveNativeLoot)
+                {
+                    CreatureTemplate const* sourceCreature = source.chest ? nullptr : sObjectMgr->GetCreatureTemplate(source.entry);
+                    uint8 requestedTarget = 0;
+                    uint8 bracketedTarget = 0;
+                    uint8 highestPlayerLevel = 0;
+                    if (ItemScalingLootScript::ResolveTargetLevels(map, owner, sourceCreature, nullptr, requestedTarget, bracketedTarget, highestPlayerLevel))
+                    {
+                        if (ItemScalingFormula::IsNativeTargetMatch(proto, requestedTarget, bracketedTarget, level))
+                        {
+                            ++visit.itemIndex;
+                            visit.rollIndex = 0;
+                            continue;
+                        }
+                    }
+                }
+
                 int32 property = 0;
                 bool moreRolls = false;
-                if (proto && (proto->RandomProperty || proto->RandomSuffix) &&
+                if ((proto->RandomProperty || proto->RandomSuffix) &&
                     sItemScalingConfig->RandomSuffixMode == RandomSuffixScalingMode::Bake)
                 {
                     uint32 pool = static_cast<uint32>(proto->RandomProperty ? proto->RandomProperty : proto->RandomSuffix);

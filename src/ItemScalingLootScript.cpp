@@ -122,7 +122,8 @@ static bool IsEligibleInstanceMap(Map const* map)
             return false;
         }
 
-        uint32 maxPlayers = map->GetMaxPlayers();
+        InstanceMap const* instanceMap = map->ToInstanceMap();
+        uint32 maxPlayers = instanceMap ? instanceMap->GetMaxPlayers() : 0;
         bool isHeroic = map->IsHeroic();
 
         if (isHeroic)
@@ -195,6 +196,201 @@ void ItemScalingLootScript::OnAfterLootTemplateProcess(
     PrepareLoot(loot, store, lootOwner);
 }
 
+static uint8 ResolveEffectiveCreatureLevel(
+    Map const* map,
+    uint8 playerLevel,
+    Creature const* creature,
+    CreatureTemplate const* cInfo)
+{
+    if (creature)
+    {
+        uint8 liveLevel = creature->GetLevel();
+        if (cInfo)
+        {
+            if (liveLevel != cInfo->maxlevel && liveLevel > 0)
+                return liveLevel;
+        }
+        else if (liveLevel > 0)
+        {
+            return liveLevel;
+        }
+    }
+
+    uint8 bossOffset = 0;
+    if (map)
+    {
+        bool isRaidBoss = false;
+        bool isDungeonBoss = false;
+
+        if (creature)
+        {
+            isRaidBoss = map->IsRaid() && creature->isWorldBoss();
+            isDungeonBoss = map->IsDungeon() && (creature->IsDungeonBoss() || creature->isWorldBoss());
+        }
+        else if (cInfo)
+        {
+            isRaidBoss = map->IsRaid() && (cInfo->rank >= CREATURE_ELITE_WORLDBOSS ||
+                         (cInfo->flags_extra & CREATURE_FLAG_EXTRA_INSTANCE_BIND));
+            isDungeonBoss = map->IsDungeon() && (cInfo->rank >= CREATURE_ELITE_RAREELITE ||
+                            (cInfo->flags_extra & CREATURE_FLAG_EXTRA_DUNGEON_BOSS));
+        }
+
+        if (isRaidBoss)
+        {
+            uint32 raidCeil = sConfigMgr->GetOption<uint32>("AutoBalance.LevelScaling.DynamicLevel.Ceiling.Raids", 3);
+            bossOffset = static_cast<uint8>(raidCeil > 0 ? raidCeil : 3);
+        }
+        else if (isDungeonBoss)
+        {
+            uint32 dungCeil = sConfigMgr->GetOption<uint32>("AutoBalance.LevelScaling.DynamicLevel.Ceiling.Dungeons", 2);
+            bossOffset = static_cast<uint8>(dungCeil > 0 ? dungCeil : 2);
+        }
+    }
+
+    if (creature)
+    {
+        uint8 liveLevel = creature->GetLevel();
+        if (cInfo && cInfo->maxlevel >= playerLevel)
+            return liveLevel;
+    }
+
+    return playerLevel + bossOffset;
+}
+
+bool ItemScalingLootScript::ResolveTargetLevels(
+    Map const* map,
+    Player const* lootOwner,
+    CreatureTemplate const* sourceOverride,
+    Creature const* creature,
+    uint8& outRequestedTarget,
+    uint8& outBracketedTarget,
+    uint8& outHighestRealPlayerLevel,
+    bool prewarm,
+    ItemScalingTarget::Input* outTargetInput)
+{
+    if (!sItemScalingConfig->Enable || !map || !lootOwner)
+    {
+        return false;
+    }
+
+    if (!IsEligibleInstanceMap(map))
+    {
+        return false;
+    }
+
+    uint8 highestRealPlayerLevel = GetHighestEligibleRealPlayerLevel(map);
+    if (highestRealPlayerLevel == 0)
+    {
+        return false;
+    }
+
+    if (highestRealPlayerLevel < sItemScalingConfig->MinLevel ||
+        highestRealPlayerLevel > sItemScalingConfig->MaxLevel)
+    {
+        return false;
+    }
+
+    uint8 cMin = 0;
+    uint8 cSrc = 0;
+    uint8 cMax = 0;
+    CreatureTemplate const* cInfo = nullptr;
+
+    if (creature)
+    {
+        if (!IsValidDropSource(creature))
+        {
+            return false;
+        }
+
+        cInfo = creature->GetCreatureTemplate();
+        if (cInfo)
+        {
+            cMin = cInfo->minlevel > 0 ? cInfo->minlevel : 1;
+            cSrc = cInfo->maxlevel > 0 ? cInfo->maxlevel : cMin;
+        }
+    }
+
+    if (sourceOverride)
+    {
+        cInfo = sourceOverride;
+        cMin = sourceOverride->minlevel > 0 ? sourceOverride->minlevel : 1;
+        cSrc = sourceOverride->maxlevel > 0 ? sourceOverride->maxlevel : cMin;
+    }
+
+    LFGDungeonEntry const* dungeon = GetLFGDungeon(map->GetId(), map->GetDifficulty());
+    if (dungeon && dungeon->MaxLevel > 0)
+    {
+        cMax = static_cast<uint8>(dungeon->MaxLevel);
+        if (cSrc == 0)
+        {
+            cSrc = dungeon->MinLevel > 0 ? static_cast<uint8>(dungeon->MinLevel) : cMax;
+            cMin = cSrc;
+        }
+    }
+
+    if (cSrc == 0)
+    {
+        cSrc = (creature ? creature->GetLevel() : (map->IsRaid() ? 80 : 20));
+        cMin = cSrc;
+    }
+    if (cMax == 0 || cMax < cSrc)
+    {
+        cMax = cSrc;
+    }
+
+    uint8 baseFloor = sItemScalingConfig->GetDynamicFloor(map);
+    uint8 baseCeiling = sItemScalingConfig->GetDynamicCeiling(map);
+
+    int8 floorDelta = 0;
+    int8 ceilingDelta = 0;
+
+    if (!prewarm)
+    {
+        if (sItemScalingConfig->FloorVarianceEnable)
+        {
+            floorDelta = ItemScalingConfig::RollVarianceDelta(
+                sItemScalingConfig->GetDynamicFloorVarianceWeights(map));
+        }
+
+        if (sItemScalingConfig->CeilingVarianceEnable)
+        {
+            ceilingDelta = ItemScalingConfig::RollVarianceDelta(
+                sItemScalingConfig->GetDynamicCeilingVarianceWeights(map));
+        }
+    }
+
+    uint8 effectiveFloor = static_cast<uint8>(std::clamp<int32>(
+        static_cast<int32>(baseFloor) + floorDelta, 0, 80));
+    uint8 effectiveCeiling = static_cast<uint8>(std::clamp<int32>(
+        static_cast<int32>(baseCeiling) + ceilingDelta, 0, 80));
+
+    ItemScalingTarget::Input targetInput;
+    targetInput.playerLevel = highestRealPlayerLevel;
+    targetInput.creatureMinLevel = cMin;
+    targetInput.creatureSourceLevel = cSrc;
+    targetInput.instanceMaxLevel = cMax;
+    targetInput.observedCreatureLevel = ResolveEffectiveCreatureLevel(map, highestRealPlayerLevel, creature, cInfo);
+    targetInput.floor = effectiveFloor;
+    targetInput.ceiling = effectiveCeiling;
+    targetInput.minLevel = sItemScalingConfig->MinLevel;
+    targetInput.maxLevel = sItemScalingConfig->MaxLevel;
+    targetInput.dynamic = sItemScalingConfig->Method == SCALING_METHOD_DYNAMIC;
+    targetInput.hasCreature = creature != nullptr || sourceOverride != nullptr;
+    targetInput.realPlayersOnly = sItemScalingConfig->RealPlayersOnly;
+
+    outRequestedTarget = ItemScalingTarget::Resolve(targetInput);
+    outBracketedTarget = ItemScalingSafety::Bracket(outRequestedTarget, sItemScalingConfig->MinLevel,
+        sItemScalingConfig->MaxLevel, sItemScalingConfig->BracketStep);
+    outHighestRealPlayerLevel = highestRealPlayerLevel;
+
+    if (outTargetInput)
+    {
+        *outTargetInput = targetInput;
+    }
+
+    return true;
+}
+
 void ItemScalingLootScript::PrepareLoot(Loot* loot, LootStore const& store, Player* lootOwner,
     CreatureTemplate const* sourceOverride, bool prewarm)
 {
@@ -226,101 +422,28 @@ void ItemScalingLootScript::PrepareLoot(Loot* loot, LootStore const& store, Play
     if (!prewarm)
         sItemScalingLive->BeginLoot(*loot, *lootOwner);
 
-    // 1. Determine highest real player level (H)
-    uint8 highestRealPlayerLevel = GetHighestEligibleRealPlayerLevel(map);
-    if (highestRealPlayerLevel == 0)
-    {
-        // No eligible players in instance: scaling disabled
-        return;
-    }
-
-    // Check player level against configured MinLevel and MaxLevel bounds
-    if (highestRealPlayerLevel < sItemScalingConfig->MinLevel ||
-        highestRealPlayerLevel > sItemScalingConfig->MaxLevel)
-    {
-        return;
-    }
-
-    // 2. Resolve unmodified creature level and instance max creature level
-    uint8 cMin = 0;
-    uint8 cSrc = 0;
-    uint8 cMax = 0;
     Creature* creature = nullptr;
-
     if (isCreatureLoot)
     {
         creature = map->GetCreature(loot->sourceWorldObjectGUID);
-        if (creature)
-        {
-            if (!IsValidDropSource(creature))
-            {
-                return;
-            }
-
-            CreatureTemplate const* cInfo = creature->GetCreatureTemplate();
-            if (cInfo)
-            {
-                cMin = cInfo->minlevel > 0 ? cInfo->minlevel : 1;
-                cSrc = cInfo->maxlevel > 0 ? cInfo->maxlevel : cMin;
-            }
-        }
     }
 
-    if (sourceOverride)
+    uint8 requestedTarget = 0;
+    uint8 lTarget = 0;
+    uint8 highestRealPlayerLevel = 0;
+    ItemScalingTarget::Input baseTargetInput;
+    if (!ResolveTargetLevels(map, lootOwner, sourceOverride, creature, requestedTarget, lTarget, highestRealPlayerLevel, prewarm, &baseTargetInput))
     {
-        cMin = sourceOverride->minlevel > 0 ? sourceOverride->minlevel : 1;
-        cSrc = sourceOverride->maxlevel > 0 ? sourceOverride->maxlevel : cMin;
+        return;
     }
-
-    LFGDungeonEntry const* dungeon = GetLFGDungeon(map->GetId(), map->GetDifficulty());
-    if (dungeon && dungeon->MaxLevel > 0)
-    {
-        cMax = static_cast<uint8>(dungeon->MaxLevel);
-        if (cSrc == 0)
-        {
-            cSrc = dungeon->MinLevel > 0 ? static_cast<uint8>(dungeon->MinLevel) : cMax;
-            cMin = cSrc;
-        }
-    }
-
-    if (cSrc == 0)
-    {
-        cSrc = (creature ? creature->GetLevel() : (map->IsRaid() ? 80 : 20));
-        cMin = cSrc;
-    }
-    if (cMax == 0 || cMax < cSrc)
-    {
-        cMax = cSrc;
-    }
-
-    // 3. Resolve the target level with pure, regression-tested policy logic.
-    ItemScalingTarget::Input targetInput;
-    targetInput.playerLevel = highestRealPlayerLevel;
-    targetInput.creatureMinLevel = cMin;
-    targetInput.creatureSourceLevel = cSrc;
-    targetInput.instanceMaxLevel = cMax;
-    targetInput.observedCreatureLevel = creature ? creature->GetLevel() : cSrc;
-    targetInput.floor = sItemScalingConfig->GetDynamicFloor(map);
-    targetInput.ceiling = sItemScalingConfig->GetDynamicCeiling(map);
-    targetInput.minLevel = sItemScalingConfig->MinLevel;
-    targetInput.maxLevel = sItemScalingConfig->MaxLevel;
-    targetInput.dynamic = sItemScalingConfig->Method == SCALING_METHOD_DYNAMIC;
-    targetInput.hasCreature = creature != nullptr || sourceOverride != nullptr;
-    targetInput.realPlayersOnly = sItemScalingConfig->RealPlayersOnly;
-    uint8 lTarget = ItemScalingTarget::Resolve(targetInput);
 
     if (sItemScalingConfig->Debug && !prewarm)
     {
-        LOG_INFO("module.ItemScaling", "ItemScaling: Map {} ('{}') - Player {} (H: {}) - Mode: {} - cSrc: {} cMax: {} -> Target Level: {}",
+        LOG_INFO("module.ItemScaling", "ItemScaling: Map {} ('{}') - Player {} (H: {}) - Mode: {} -> Target Level: {} (Requested: {})",
             map->GetId(), map->GetMapName(), lootOwner->GetName(), highestRealPlayerLevel,
             sItemScalingConfig->Method == SCALING_METHOD_DYNAMIC ? "dynamic" : "fixed",
-            cSrc, cMax, lTarget);
+            lTarget, requestedTarget);
     }
-
-    // Bracketing is a runtime target rule. Never increase the target by rounding.
-    uint8 requestedTarget = lTarget;
-    lTarget = ItemScalingSafety::Bracket(lTarget, sItemScalingConfig->MinLevel,
-        sItemScalingConfig->MaxLevel, sItemScalingConfig->BracketStep);
 
     auto scaleLootItem = [&](LootItem& item)
     {
@@ -364,70 +487,80 @@ void ItemScalingLootScript::PrepareLoot(Loot* loot, LootStore const& store, Play
             return;
         }
 
-        // Determine item's original reference level
-        uint8 origRefLevel = static_cast<uint8>(baseProto->RequiredLevel);
-        if (origRefLevel == 0)
+        uint8 effectiveRequested = requestedTarget;
+        uint8 effectiveTarget = lTarget;
+
+        if (sItemScalingConfig->VarianceScope == 1 && !prewarm &&
+            (sItemScalingConfig->FloorVarianceEnable || sItemScalingConfig->CeilingVarianceEnable))
         {
-            origRefLevel = static_cast<uint8>(std::clamp<uint32>(baseProto->ItemLevel, 1, 80));
+            uint8 bFloor = sItemScalingConfig->GetDynamicFloor(map);
+            uint8 bCeil = sItemScalingConfig->GetDynamicCeiling(map);
+            int8 fDelta = sItemScalingConfig->FloorVarianceEnable
+                ? ItemScalingConfig::RollVarianceDelta(sItemScalingConfig->GetDynamicFloorVarianceWeights(map))
+                : 0;
+            int8 cDelta = sItemScalingConfig->CeilingVarianceEnable
+                ? ItemScalingConfig::RollVarianceDelta(sItemScalingConfig->GetDynamicCeilingVarianceWeights(map))
+                : 0;
+
+            ItemScalingTarget::Input itemInput = baseTargetInput;
+            itemInput.floor = static_cast<uint8>(std::clamp<int32>(static_cast<int32>(bFloor) + fDelta, 0, 80));
+            itemInput.ceiling = static_cast<uint8>(std::clamp<int32>(static_cast<int32>(bCeil) + cDelta, 0, 80));
+
+            effectiveRequested = ItemScalingTarget::Resolve(itemInput);
+            effectiveTarget = ItemScalingSafety::Bracket(effectiveRequested, sItemScalingConfig->MinLevel,
+                sItemScalingConfig->MaxLevel, sItemScalingConfig->BracketStep);
         }
+
+        // Determine item's original reference level
+        uint8 origRefLevel = ItemScalingFormula::GetNativeReferenceLevel(baseProto);
 
         // Scaling does not apply when item's native level already matches target level
-        // (e.g. 80 to 80, 70 to 70, 60 to 60)
-        if (origRefLevel == requestedTarget || origRefLevel == lTarget)
+        // (e.g. 80 to 80, 70 to 70, 60 to 60, or player level matches native in lower level instances)
+        if (sItemScalingConfig->PreserveNativeLoot &&
+            ItemScalingFormula::IsNativeTargetMatch(baseProto, effectiveRequested, effectiveTarget, highestRealPlayerLevel))
         {
             if (sItemScalingConfig->Debug)
             {
-                LOG_INFO("module.ItemScaling", "ItemScaling: Skipped item {} '{}' (Native level {} matches target level {}, no scaling needed)",
-                    baseProto->ItemId, baseProto->Name1, origRefLevel, lTarget);
-            }
-            return;
-        }
-
-        // Check if item's native level is explicitly configured as excluded
-        if (sItemScalingConfig->IsLevelExcluded(origRefLevel))
-        {
-            if (sItemScalingConfig->Debug)
-            {
-                LOG_INFO("module.ItemScaling", "ItemScaling: Skipped item {} '{}' (Native level {} is in ExcludedLevels)",
-                    baseProto->ItemId, baseProto->Name1, origRefLevel);
+                LOG_INFO("module.ItemScaling", "ItemScaling: Preserved original item {} '{}' (Native level {} matches target {}/bracket {}/player {}, no scaling needed)",
+                    baseProto->ItemId, baseProto->Name1, origRefLevel, effectiveRequested, effectiveTarget, highestRealPlayerLevel);
             }
             return;
         }
 
         // Directional scaling checks
-        if (!sItemScalingConfig->ScaleDown && lTarget < origRefLevel)
+        if (!sItemScalingConfig->ScaleDown && effectiveTarget < origRefLevel)
         {
             if (sItemScalingConfig->Debug)
             {
                 LOG_INFO("module.ItemScaling", "ItemScaling: Skipped item {} '{}' (ScaleDown disabled: lTarget {} < origRef {})",
-                    baseProto->ItemId, baseProto->Name1, lTarget, origRefLevel);
+                    baseProto->ItemId, baseProto->Name1, effectiveTarget, origRefLevel);
             }
             return;
         }
-        if (!sItemScalingConfig->ScaleUp && lTarget > origRefLevel)
+        if (!sItemScalingConfig->ScaleUp && effectiveTarget > origRefLevel)
         {
             if (sItemScalingConfig->Debug)
             {
                 LOG_INFO("module.ItemScaling", "ItemScaling: Skipped item {} '{}' (ScaleUp disabled: lTarget {} > origRef {})",
-                    baseProto->ItemId, baseProto->Name1, lTarget, origRefLevel);
+                    baseProto->ItemId, baseProto->Name1, effectiveTarget, origRefLevel);
             }
             return;
         }
 
         // Calculate target ItemLevel via Blizzard baseline model
-        uint16 targetIlvl = sItemScalingBaseline->CalculateTargetItemLevel(baseProto, lTarget, origRefLevel);
+        uint16 targetIlvl = sItemScalingBaseline->CalculateTargetItemLevel(baseProto, effectiveTarget, origRefLevel);
         if (targetIlvl == 0)
         {
             return;
         }
 
         // If target matches original exactly, no variant needed
-        if (targetIlvl == baseProto->ItemLevel && lTarget == origRefLevel)
+        if (targetIlvl == baseProto->ItemLevel && effectiveTarget == origRefLevel)
         {
             if (sItemScalingConfig->Debug)
             {
                 LOG_INFO("module.ItemScaling", "ItemScaling: Skipped item {} '{}' (Already matches target lvl {} and ilvl {})",
-                    baseProto->ItemId, baseProto->Name1, lTarget, targetIlvl);
+                    baseProto->ItemId, baseProto->Name1, effectiveTarget, targetIlvl);
             }
             return;
         }
@@ -467,7 +600,7 @@ void ItemScalingLootScript::PrepareLoot(Loot* loot, LootStore const& store, Play
         // A live miss is held until its durable template is published; legacy mode queues demand.
         uint32 variantEntry = sItemScalingRegistry->FindOrRequestVariant(
             baseProto,
-            lTarget,
+            effectiveTarget,
             targetIlvl,
             sItemScalingConfig->FormulaVersion,
             highestRealPlayerLevel,
@@ -476,9 +609,9 @@ void ItemScalingLootScript::PrepareLoot(Loot* loot, LootStore const& store, Play
 
         if (variantEntry == 0 && !prewarm)
         {
-            VariantKey key{baseProto->ItemId, lTarget, targetIlvl, sItemScalingConfig->FormulaVersion,
+            VariantKey key{baseProto->ItemId, effectiveTarget, targetIlvl, sItemScalingConfig->FormulaVersion,
                 ITEM_SCALING_GENERATOR_REVISION,
-                ItemScalingFormula::CalculateRequiredLevel(baseProto, lTarget, highestRealPlayerLevel), randomPropId};
+                ItemScalingFormula::CalculateRequiredLevel(baseProto, effectiveTarget, highestRealPlayerLevel), randomPropId};
             sItemScalingLive->TrackLoot(*loot, *lootOwner, static_cast<std::size_t>(&item - loot->items.data()), key);
         }
 
@@ -503,7 +636,7 @@ void ItemScalingLootScript::PrepareLoot(Loot* loot, LootStore const& store, Play
             if (sItemScalingConfig->Debug)
             {
                 LOG_INFO("module.ItemScaling", "ItemScaling: Scaled item {} '{}' -> Variant {} (Lvl: {}, Ilvl: {} vs Orig Ilvl: {})",
-                    baseProto->ItemId, baseProto->Name1, variantEntry, lTarget, targetIlvl, baseProto->ItemLevel);
+                    baseProto->ItemId, baseProto->Name1, variantEntry, effectiveTarget, targetIlvl, baseProto->ItemLevel);
             }
         }
     };
