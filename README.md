@@ -14,8 +14,10 @@ When eligible loot is generated inside a supported instance, the module can:
 
 - scale item level, required level, armor, weapon damage, stats, resistances, and other template fields;
 - scale upward or downward;
-- use either a fixed target or a dynamic dungeon/raid hierarchy;
+- use either a fixed player-level target or dynamic scaling from the creature's current in-instance level;
 - distinguish normal dungeons, heroic dungeons, and individual raid-size/difficulty categories;
+- preserve native Blizzard loot automatically when scaling would be unnecessary;
+- optionally roll configurable floor/ceiling variance for lucky higher-level drops;
 - optionally mirror AutoBalance's level-scaling configuration;
 - generate missing variants during the first dungeon visit or only when the item actually drops;
 - persist generated variants asynchronously before they are awarded;
@@ -74,44 +76,74 @@ Already awarded items are immutable. They are not rewritten merely because **H**
 
 If `ItemScaling.Announce = 1`, the module can announce the active instance category, highest eligible player, and dynamic floor/ceiling information when entering and when relevant in-instance level changes occur.
 
-## Dynamic scaling defaults
+## Dynamic scaling model and defaults
 
-The module has its own granular dynamic settings and does not require AutoBalance.
+Dynamic mode now derives loot targets from the creature's **current in-instance effective level** (`L_mob`) instead of comparing native creature-template levels to the instance maximum.
 
-Current defaults:
+The effective calculation is:
+
+```text
+RawTarget = L_mob - Floor
+Target    = clamp(
+              RawTarget,
+              ItemScaling.MinLevel,
+              min(H + Ceiling, ItemScaling.MaxLevel)
+            )
+```
+
+where **H** is the highest eligible player level.
+
+For live creature loot, `L_mob` is the creature's current `GetLevel()`. This means external creature scaling such as AutoBalance is naturally reflected in the item target. Mode 1 prewarm predicts the same encounter hierarchy from creature rank and map type so the baseline preparation path remains aligned with live drops.
+
+Current defaults are deliberately conservative:
 
 | Instance category | Ceiling | Floor |
 |---|---:|---:|
-| Normal dungeon | +5 | -3 |
-| TBC heroic dungeon | +5 | 0 |
-| Wrath heroic dungeon | +5 | 0 |
-| Generic/custom heroic dungeon | +5 | 0 |
-| Raid fallback | +3 | 0 |
-| 10-player raid | +3 | 0 |
-| 10-player heroic raid | +3 | 0 |
-| 15-player raid | +3 | 0 |
-| 20-player raid | +3 | 0 |
-| 25-player raid | +3 | 0 |
-| 25-player heroic raid | +3 | 0 |
-| 40-player raid | +3 | 0 |
+| Normal dungeon | 0 | 3 |
+| TBC heroic dungeon | 0 | 3 |
+| Wrath heroic dungeon | 0 | 3 |
+| Generic/custom heroic dungeon | 0 | 3 |
+| Raid fallback | 0 | 3 |
+| 10-player raid | 0 | 3 |
+| 10-player heroic raid | 0 | 3 |
+| 15-player raid | 0 | 3 |
+| 20-player raid | 0 | 3 |
+| 25-player raid | 0 | 3 |
+| 25-player heroic raid | 0 | 3 |
+| 40-player raid | 0 | 3 |
 
-Examples:
+Example defaults:
 
 ```ini
-ItemScaling.Dynamic.Ceiling.Dungeons = 5
+ItemScaling.Dynamic.Ceiling.Dungeons = 0
 ItemScaling.Dynamic.Floor.Dungeons = 3
 
-ItemScaling.Dynamic.Ceiling.HeroicDungeons.TBC = 5
-ItemScaling.Dynamic.Floor.HeroicDungeons.TBC = 0
+ItemScaling.Dynamic.Ceiling.HeroicDungeons.TBC = 0
+ItemScaling.Dynamic.Floor.HeroicDungeons.TBC = 3
 
-ItemScaling.Dynamic.Ceiling.HeroicDungeons.Wrath = 5
-ItemScaling.Dynamic.Floor.HeroicDungeons.Wrath = 0
+ItemScaling.Dynamic.Ceiling.HeroicDungeons.Wrath = 0
+ItemScaling.Dynamic.Floor.HeroicDungeons.Wrath = 3
 
-ItemScaling.Dynamic.Ceiling.Raid25M = 3
-ItemScaling.Dynamic.Floor.Raid25M = 0
+ItemScaling.Dynamic.Ceiling.Raid25M = 0
+ItemScaling.Dynamic.Floor.Raid25M = 3
 ```
 
-Per-instance overrides are also supported:
+With `H = 80` and the default raid settings:
+
+```text
+Raid skull boss at level 83 -> 83 - 3 = target 80
+Raid trash at level 80      -> 80 - 3 = target 77
+```
+
+With `H = 70` in Black Temple / Tempest Keep:
+
+```text
+Raid boss at level 73 -> 73 - 3 = target 70
+```
+
+That target can then trigger native-loot preservation when the original item is already a native level-70 drop.
+
+Per-instance overrides remain supported:
 
 ```ini
 ItemScaling.Dynamic.PerInstance = "229 3 0, 230 5 3"
@@ -122,6 +154,98 @@ The parser also accepts AutoBalance's five-token per-instance format:
 ```text
 [MapID] [SkipHigher] [SkipLower] [Ceiling] [Floor]
 ```
+
+## Native loot preservation
+
+Native-equivalent loot is preserved by default:
+
+```ini
+ItemScaling.PreserveNativeLoot = 1
+```
+
+The module determines an item's native reference level using `RequiredLevel` when it is non-zero; otherwise it falls back to `ItemLevel`, clamped to the supported player-level range.
+
+When preservation is enabled, the original Blizzard item is used directly if its native reference level matches any of:
+
+- the requested target level;
+- the bracketed target level;
+- the highest eligible player level.
+
+That bypass happens before synthetic generation wherever possible and is enforced again in the final loot/registry path.
+
+Examples:
+
+```text
+Level 70 player in Black Temple
+native item reference = 70
+target = 70
+=> original item drops
+=> no synthetic slot, no staging row, no demand request
+
+Level 80 player in Black Temple
+native item reference = 70
+target = 80
+=> levels do not match
+=> normal upward scaling can proceed
+```
+
+This replaces the old manual `ItemScaling.ExcludedLevels` blacklist. The new behavior is conditional: a native level-70 item can stay untouched for a level-70 player while still scaling for a level-80 player.
+
+It works in Mode 1 prewarm, Mode 2 actual-drop generation, and legacy/offline demand mode.
+
+## Dynamic floor and ceiling variance
+
+Dynamic scaling can roll controlled per-drop variation around the configured floor and ceiling.
+
+Defaults:
+
+```ini
+ItemScaling.Dynamic.Floor.Variance.Enable = 1
+ItemScaling.Dynamic.Ceiling.Variance.Enable = 0
+ItemScaling.Dynamic.Variance.Scope = 0
+
+ItemScaling.Dynamic.Floor.Variance.Dungeons = "-1:20.0, -2:10.0, -3:5.0"
+ItemScaling.Dynamic.Floor.Variance.HeroicDungeons = "-1:20.0, -2:10.0, -3:5.0"
+ItemScaling.Dynamic.Floor.Variance.Raids = "-1:20.0, -2:10.0, -3:5.0"
+```
+
+Because the target is `L_mob - Floor`, a **negative floor delta is an upgrade**:
+
+| Roll | Effective floor from base 3 | Example: level-80 trash |
+|---|---:|---:|
+| no variance | 3 | target 77 |
+| `-1` | 2 | target 78 |
+| `-2` | 1 | target 79 |
+| `-3` | 0 | target 80 |
+
+The default weights mean:
+
+```text
+20% -> floor delta -1
+10% -> floor delta -2
+ 5% -> floor delta -3
+65% -> no floor change
+```
+
+Both named-pair and six-value positional formats are supported:
+
+```ini
+"-1:20.0, -2:10.0, -3:5.0"
+"5.0, 10.0, 20.0, 0.0, 0.0, 0.0"
+```
+
+The positional order is `-3, -2, -1, +1, +2, +3`. Percentages do not need to total 100; the remainder means no change.
+
+`ItemScaling.Dynamic.Variance.Scope` controls when the roll happens:
+
+| Value | Scope |
+|---|---|
+| `0` | Per-loot/per-creature roll; items on that loot source share the rolled shift. |
+| `1` | Per-item roll; each eligible item can resolve independently. |
+
+Ceiling variance uses the same weight format but is disabled by default. A positive ceiling delta permits targets above `H`, still bounded by `ItemScaling.MaxLevel`.
+
+Mode 1 prewarm intentionally uses **zero variance** to prepare deterministic baseline variants. Lucky rolled variants are generated on demand when real loot is processed.
 
 ## AutoBalance integration
 
@@ -150,7 +274,9 @@ the module reads the relevant AutoBalance level-scaling configuration and adopts
 
 The instance category model is aligned with AutoBalance's normal/heroic dungeon and raid-size categories.
 
-This integration does **not** mean that an item's level is copied directly from one creature's current level. Item Level Scaling still calculates its own exact item variant key and target using the active player/instance scaling context.
+In dynamic mode, the current in-instance creature level is an authoritative input to the target calculation. AutoBalance can therefore affect loot through the creature level itself, while `ItemScaling.UseAutoBalanceSettings = 1` additionally adopts AutoBalance's configured method, floors, ceilings and per-instance overrides.
+
+Item Level Scaling still creates its own exact variant key and permanent item template; it does not reuse or mutate an AutoBalance object.
 
 ## First-run live generation
 
@@ -174,7 +300,9 @@ ItemScaling.Live.Enable = 1
 ItemScaling.Live.GenerationMode = 1
 ```
 
-If an unexpected item is not ready when it drops, the module briefly defers that loot path while the exact variant is generated and durably staged.
+Mode 1 prewarm prepares deterministic baseline targets and does not consume variance rolls. When real loot is processed, native-match preservation and any enabled variance are evaluated before the exact variant is selected.
+
+If an unexpected or lucky-variance item is not ready when it drops, the module briefly defers that loot path while the exact variant is generated and durably staged.
 
 The original rolled item identity, count, slot, ownership and random-property information are retained while waiting.
 
@@ -306,10 +434,12 @@ It also supports:
 ```ini
 ItemScaling.MinLevel = 1
 ItemScaling.MaxLevel = 80
-ItemScaling.ExcludedLevels = ""
+ItemScaling.PreserveNativeLoot = 1
 ItemScaling.ExcludedMapIds = ""
 ItemScaling.ExcludedItemIds = ""
 ```
+
+`ItemScaling.ExcludedLevels` has been replaced by `ItemScaling.PreserveNativeLoot`. Native matching is dynamic rather than a permanent blacklist of all items from particular progression levels.
 
 Quest-related items, quest starters, scripted equipment, configured exclusions, disabled items and protected native behaviors are filtered from the ordinary scaling path.
 
@@ -386,7 +516,7 @@ It reports eligibility, target/native level, target item level, required level, 
 
 ## Important configuration
 
-A minimal live setup:
+A representative live setup using the current defaults:
 
 ```ini
 ItemScaling.Enable = 1
@@ -399,6 +529,19 @@ ItemScaling.ScaleChests = 1
 ItemScaling.LevelScaling.Method = "dynamic"
 ItemScaling.RealPlayersOnly = 1
 ItemScaling.IncludeGameMasters = 0
+ItemScaling.PreserveNativeLoot = 1
+
+ItemScaling.Dynamic.Ceiling.Dungeons = 0
+ItemScaling.Dynamic.Floor.Dungeons = 3
+ItemScaling.Dynamic.Ceiling.Raids = 0
+ItemScaling.Dynamic.Floor.Raids = 3
+
+ItemScaling.Dynamic.Floor.Variance.Enable = 1
+ItemScaling.Dynamic.Ceiling.Variance.Enable = 0
+ItemScaling.Dynamic.Variance.Scope = 0
+ItemScaling.Dynamic.Floor.Variance.Dungeons = "-1:20.0, -2:10.0, -3:5.0"
+ItemScaling.Dynamic.Floor.Variance.HeroicDungeons = "-1:20.0, -2:10.0, -3:5.0"
+ItemScaling.Dynamic.Floor.Variance.Raids = "-1:20.0, -2:10.0, -3:5.0"
 
 ItemScaling.Live.Enable = 1
 ItemScaling.Live.GenerationMode = 1
@@ -412,22 +555,10 @@ ItemScaling.RequiredLevel.Policy = "target"
 
 ItemScaling.UseAutoBalanceSettings = 0
 ItemScaling.Announce = 1
-
-# Bypass synthetic scaling when item's native level matches target or player level
-ItemScaling.PreserveNativeLoot = 1
-
-# Dynamic floor & ceiling variance
-ItemScaling.Dynamic.Floor.Variance.Enable = 1
-ItemScaling.Dynamic.Ceiling.Variance.Enable = 0
-ItemScaling.Dynamic.Variance.Scope = 0
+ItemScaling.BracketStep = 1
 
 # Used for new requests when Live.Enable=0
 ItemScaling.DemandLedger.Enable = 1
-ItemScaling.ScaleDungeons = 1
-ItemScaling.ScaleRaids = 1
-ItemScaling.ScaleHeroics = 1
-ItemScaling.ScaleChests = 1
-ItemScaling.BracketStep = 1
 ```
 
 See the complete documented template:
@@ -550,6 +681,8 @@ Useful checks:
 - confirm `RealPlayersOnly` matches the intended Playerbot behavior;
 - confirm AutoBalance synergy is enabled only when desired;
 - confirm the active floor/ceiling category;
+- confirm `PreserveNativeLoot` if native progression drops should remain untouched;
+- confirm floor/ceiling variance settings and scope;
 - use `.itemscaling preview` on a known item;
 - inspect `docs/ISSUES.md` for known or recently resolved problems.
 
