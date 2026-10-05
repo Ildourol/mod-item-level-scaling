@@ -216,18 +216,41 @@ ItemScaling.ScaleHeirloom = 0
 
 ItemScaling.RandomSuffix.Mode = 0
 
-# Pure Live Generation Architecture. No core, Playerbots or client patches are required.
-# All Live.* settings are startup-only.
-#   ItemScaling.Live.Enable = 1 (Default): Pure Live Generation active.
-#       Hybrid Mode 1: bounded world-update prewarm on instance entry + on-demand async generation on actual drop.
-#       Mode 2: on-demand async generation on actual drop only.
-#   ItemScaling.Live.Enable = 0: Persisted-variants-only mode.
-#       Serves existing variants already present in scaled_item_variant. Unseen variants remain original Blizzard items.
-#       No runtime generation, no background queueing, and no loot deferral wait.
-# Both modes defer an unexpected miss and preserve original loot on failure/timeout.
-# SQL staging stores complete snapshots before award; next startup promotes them to permanent tables.
+#
+#    Pure Live Generation Architecture
+#        Description: Controls how dynamic scaled item variants are generated and served.
+#                     No core modifications, Playerbots patches, or client modifications required.
+#                     NOTE: All Live.* settings are loaded at startup and require a server restart to change.
+#
+#    ItemScaling.Live.Enable
+#        1 - Enabled (Default): Pure Live Generation active. New item variants are generated live at runtime.
+#        0 - Disabled: Database-only mode. Only pre-existing variants already saved in the database
+#                      (scaled_item_variant table) will scale. Any items without existing scaled entries
+#                      will drop as original unscaled Blizzard items with zero generation delay.
+#
+#    ItemScaling.Live.GenerationMode
+#        Determines the generation timing strategy when Live.Enable = 1:
+#
+#        2 - On-Demand Async Generation (Default):
+#            Generates scaled items asynchronously only when a creature or chest actually drops loot.
+#            Zero startup overhead, zero background work on dungeon entry, highly efficient and lightweight.
+#
+#        1 - Hybrid Mode (Bounded Entry Prewarm + On-Demand Drop):
+#            Pre-generates item variants in the background when players enter a dungeon, in addition to
+#            on-demand fallback on loot drop. Helps pre-populate loot tables earlier at the cost of
+#            background CPU ticks upon instance entry.
+#
+#        Safety Invariant:
+#            Both modes defer player loot receipt briefly (within LootWaitTimeoutMs) while generating.
+#            If generation fails or times out, the item safely drops as its original unscaled Blizzard version.
+#            Snapshots are staged to the database and automatically promoted to permanent tables on restart.
+#
+#        Default: Live.Enable = 1
+#                 Live.GenerationMode = 2
+#
+
 ItemScaling.Live.Enable = 1
-ItemScaling.Live.GenerationMode = 1
+ItemScaling.Live.GenerationMode = 2
 
 # Available inert item-template slots loaded at startup. Used slots are immutable.
 # Increasing capacity takes effect at the next restart. No runtime store resizing occurs.
@@ -374,18 +397,18 @@ ItemScaling.Dynamic.PerInstance = ""
 #
 #        Defaults:    Floor.Variance.Enable = 1 (Enabled)
 #                     Ceiling.Variance.Enable = 0 (Disabled)
-#                     Variance.Scope = 0 (0 = Per-Loot / Per-Boss, 1 = Per-Item)
+#                     Variance.Scope = 1 (1 = Per-Item, 0 = Per-Loot / Per-Boss)
 #
 
 ItemScaling.Dynamic.Floor.Variance.Enable = 1
 ItemScaling.Dynamic.Ceiling.Variance.Enable = 0
-ItemScaling.Dynamic.Variance.Scope = 0
+ItemScaling.Dynamic.Variance.Scope = 1
 
 ItemScaling.Dynamic.Floor.Variance.Dungeons = "-1:20.0, -2:10.0, -3:5.0"
 ItemScaling.Dynamic.Floor.Variance.HeroicDungeons = "-1:20.0, -2:10.0, -3:5.0"
 ItemScaling.Dynamic.Floor.Variance.HeroicDungeons.TBC = ""
 ItemScaling.Dynamic.Floor.Variance.HeroicDungeons.Wrath = ""
-ItemScaling.Dynamic.Floor.Variance.Raids = "-1:20.0, -2:10.0, -3:5.0"
+ItemScaling.Dynamic.Floor.Variance.Raids = ""
 ItemScaling.Dynamic.Floor.Variance.HeroicRaids = ""
 ItemScaling.Dynamic.Floor.Variance.Raid10M = ""
 ItemScaling.Dynamic.Floor.Variance.Raid10MHeroic = ""

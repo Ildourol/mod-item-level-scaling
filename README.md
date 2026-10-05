@@ -201,11 +201,11 @@ Defaults:
 ```ini
 ItemScaling.Dynamic.Floor.Variance.Enable = 1
 ItemScaling.Dynamic.Ceiling.Variance.Enable = 0
-ItemScaling.Dynamic.Variance.Scope = 0
+ItemScaling.Dynamic.Variance.Scope = 1
 
 ItemScaling.Dynamic.Floor.Variance.Dungeons = "-1:20.0, -2:10.0, -3:5.0"
 ItemScaling.Dynamic.Floor.Variance.HeroicDungeons = "-1:20.0, -2:10.0, -3:5.0"
-ItemScaling.Dynamic.Floor.Variance.Raids = "-1:20.0, -2:10.0, -3:5.0"
+ItemScaling.Dynamic.Floor.Variance.Raids = ""
 ```
 
 Because the target is `L_mob - Floor`, a **negative floor delta is an upgrade**:
@@ -296,7 +296,7 @@ Default:
 
 ```ini
 ItemScaling.Live.Enable = 1
-ItemScaling.Live.GenerationMode = 1
+ItemScaling.Live.GenerationMode = 2
 ```
 
 Mode 1 prewarm prepares deterministic baseline targets and does not consume variance rolls. When real loot is processed, native-match preservation and any enabled variance are evaluated before the exact variant is selected.
@@ -530,13 +530,13 @@ ItemScaling.Dynamic.Floor.Raids = 3
 
 ItemScaling.Dynamic.Floor.Variance.Enable = 1
 ItemScaling.Dynamic.Ceiling.Variance.Enable = 0
-ItemScaling.Dynamic.Variance.Scope = 0
+ItemScaling.Dynamic.Variance.Scope = 1
 ItemScaling.Dynamic.Floor.Variance.Dungeons = "-1:20.0, -2:10.0, -3:5.0"
 ItemScaling.Dynamic.Floor.Variance.HeroicDungeons = "-1:20.0, -2:10.0, -3:5.0"
-ItemScaling.Dynamic.Floor.Variance.Raids = "-1:20.0, -2:10.0, -3:5.0"
+ItemScaling.Dynamic.Floor.Variance.Raids = ""
 
 ItemScaling.Live.Enable = 1
-ItemScaling.Live.GenerationMode = 1
+ItemScaling.Live.GenerationMode = 2
 ItemScaling.Live.ReservedSlots = 4096
 ItemScaling.Live.MaxPendingVariants = 4096
 ItemScaling.Live.MaxPublishPerTick = 64

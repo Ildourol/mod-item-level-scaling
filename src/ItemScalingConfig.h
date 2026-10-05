@@ -93,7 +93,7 @@ public:
 
     bool FloorVarianceEnable{true};
     bool CeilingVarianceEnable{false};
-    uint8 VarianceScope{0};
+    uint8 VarianceScope{1};
 
     VarianceWeights FloorVarianceDungeons;
     VarianceWeights CeilingVarianceDungeons;
@@ -146,7 +146,7 @@ public:
 
     // Startup-only: live templates use slots already loaded by ObjectMgr.
     bool LiveEnable{true};
-    uint8 LiveGenerationMode{1};
+    uint8 LiveGenerationMode{2};
     uint32 LiveReservedSlots{4096};
     uint32 LiveMaxPendingVariants{4096};
     uint32 LiveMaxPublishPerTick{64};

@@ -24,7 +24,7 @@ void ItemScalingConfig::Load(bool reload)
     if (reload)
     {
         if (sConfigMgr->GetOption<bool>("ItemScaling.Live.Enable", true) != LiveEnable ||
-            sConfigMgr->GetOption<uint32>("ItemScaling.Live.GenerationMode", 1) != LiveGenerationMode ||
+            sConfigMgr->GetOption<uint32>("ItemScaling.Live.GenerationMode", 2) != LiveGenerationMode ||
             sConfigMgr->GetOption<uint32>("ItemScaling.Live.ReservedSlots", 4096) != LiveReservedSlots ||
             sConfigMgr->GetOption<uint32>("ItemScaling.Live.MaxPendingVariants", 4096) != LiveMaxPendingVariants ||
             sConfigMgr->GetOption<uint32>("ItemScaling.Live.MaxPublishPerTick", 64) != LiveMaxPublishPerTick ||
@@ -148,7 +148,7 @@ void ItemScalingConfig::Load(bool reload)
     FloorVarianceEnable = sConfigMgr->GetOption<bool>("ItemScaling.Dynamic.Floor.Variance.Enable", true);
     CeilingVarianceEnable = sConfigMgr->GetOption<bool>("ItemScaling.Dynamic.Ceiling.Variance.Enable", false);
     VarianceScope = static_cast<uint8>(std::clamp<uint32>(
-        sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Variance.Scope", 0), 0, 1));
+        sConfigMgr->GetOption<uint32>("ItemScaling.Dynamic.Variance.Scope", 1), 0, 1));
 
     std::string defaultFloorVar = "-1:20.0, -2:10.0, -3:5.0";
     std::string defaultCeilVar = "";
@@ -174,7 +174,7 @@ void ItemScalingConfig::Load(bool reload)
         sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Ceiling.Variance.HeroicDungeons.Wrath", ""));
 
     FloorVarianceRaids = ParseVarianceWeights(
-        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Floor.Variance.Raids", defaultFloorVar));
+        sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Floor.Variance.Raids", ""));
     CeilingVarianceRaids = ParseVarianceWeights(
         sConfigMgr->GetOption<std::string>("ItemScaling.Dynamic.Ceiling.Variance.Raids", defaultCeilVar));
 
@@ -313,7 +313,7 @@ void ItemScalingConfig::Load(bool reload)
         FormulaVersion = static_cast<uint8>(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("ItemScaling.FormulaVersion", 1), 1, 255));
         LiveEnable = sConfigMgr->GetOption<bool>("ItemScaling.Live.Enable", true);
         LiveGenerationMode = static_cast<uint8>(std::clamp<uint32>(
-            sConfigMgr->GetOption<uint32>("ItemScaling.Live.GenerationMode", 1), 1, 2));
+            sConfigMgr->GetOption<uint32>("ItemScaling.Live.GenerationMode", 2), 1, 2));
         LiveReservedSlots = std::clamp<uint32>(
             sConfigMgr->GetOption<uint32>("ItemScaling.Live.ReservedSlots", 4096), 1, 250000);
         LiveMaxPendingVariants = std::clamp<uint32>(
