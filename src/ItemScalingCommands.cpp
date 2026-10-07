@@ -13,7 +13,10 @@
 #include "ItemScalingLive.h"
 #include "ItemScalingSafety.h"
 #include "ItemTemplate.h"
+#include "Opcodes.h"
 #include "Player.h"
+#include "WorldPacket.h"
+#include "WorldSession.h"
 #include <algorithm>
 
 using namespace Acore::ChatCommands;
@@ -213,6 +216,15 @@ public:
         if (existingEntry != 0)
         {
             handler->PSendSysMessage("Synthetic Variant Status: |cff00ff00INDEXED IN-MEMORY (ID: {})|r", existingEntry);
+            if (Player* gm = handler->GetPlayer())
+            {
+                if (gm->IsInWorld() && gm->GetSession())
+                {
+                    WorldPacket queryPacket(CMSG_ITEM_QUERY_SINGLE, sizeof(uint32));
+                    queryPacket << existingEntry;
+                    gm->GetSession()->HandleItemQuerySingleOpcode(queryPacket);
+                }
+            }
         }
         else if (sItemScalingConfig->LiveEnable)
         {

@@ -826,6 +826,7 @@ void ItemScalingLive::Update(uint32 diff)
             _impl->requests.at(key).state = Impl::State::Failed;
             --_impl->pendingCount;
             ++_impl->failures;
+            _impl->reserved.erase(request.scaled.ItemId);
             LOG_WARN("module.ItemScaling", "Rejected live variant for item {}: unsupported baking or metadata.", key.baseEntry);
             continue;
         }
@@ -849,6 +850,7 @@ void ItemScalingLive::Update(uint32 diff)
             {
                 --_impl->pendingCount;
                 ++_impl->failures;
+                _impl->reserved.erase(entry.scaled.ItemId);
                 LOG_WARN("module.ItemScaling", "Live persistence failed for base {}; original loot retained.", key.baseEntry);
             }
         });
@@ -869,6 +871,7 @@ void ItemScalingLive::Update(uint32 diff)
             request.state = Impl::State::Failed;
             --_impl->pendingCount;
             ++_impl->failures;
+            _impl->reserved.erase(entry);
             LOG_ERROR("module.ItemScaling", "Live slot {} changed unexpectedly; withholding durable snapshot.", entry);
             continue;
         }
@@ -923,7 +926,11 @@ void ItemScalingLive::Update(uint32 diff)
                 it = _impl->queries.erase(it);
             }
             else if (_impl->now - it->second >= sItemScalingConfig->LiveLootWaitTimeoutMs)
+            {
+                _impl->reserved.erase(it->first.second);
+                queryReady.push_back(it->first);
                 it = _impl->queries.erase(it);
+            }
             else
                 ++it;
         }
@@ -946,6 +953,7 @@ void ItemScalingLive::Update(uint32 diff)
         if (!intact)
             continue; // Native/scripted loot already progressed. Never rewrite an active roll.
         bool fallback = false;
+        std::vector<uint32> publishedEntries;
         for (auto const& item : pending.items)
         {
             uint32 entry = Find(item.key);
@@ -954,6 +962,7 @@ void ItemScalingLive::Update(uint32 diff)
                 loot->items[item.index].itemid = entry;
                 loot->items[item.index].randomPropertyId = 0;
                 loot->items[item.index].randomSuffix = 0;
+                publishedEntries.push_back(entry);
             }
             else
                 fallback = true;
@@ -992,10 +1001,18 @@ void ItemScalingLive::Update(uint32 diff)
         for (auto [guid, type] : pending.openers)
         {
             Player* player = ObjectAccessor::FindPlayer(guid);
-            if (!player || !player->IsInWorld() || player->GetMap() != map)
+            if (!player || !player->IsInWorld() || player->GetMap() != map || !player->GetSession())
                 continue;
             if (fallback)
                 ChatHandler(player->GetSession()).SendSysMessage("Item scaling could not finish; original loot preserved.");
+
+            for (uint32 publishedEntry : publishedEntries)
+            {
+                WorldPacket queryPacket(CMSG_ITEM_QUERY_SINGLE, sizeof(uint32));
+                queryPacket << publishedEntry;
+                player->GetSession()->HandleItemQuerySingleOpcode(queryPacket);
+            }
+
             if (go)
             {
                 if (player->IsAlive() && go->IsWithinDistInMap(player))
@@ -1003,20 +1020,29 @@ void ItemScalingLive::Update(uint32 diff)
             }
             else
             {
-                auto packet = new WorldPacket(CMSG_LOOT, sizeof(uint64));
-                *packet << source.guid;
-                player->GetSession()->QueuePacket(packet);
+                if (player->IsAlive() && creature && creature->IsWithinDistInMap(player, INTERACTION_DISTANCE))
+                    player->SendLoot(source.guid, type);
+                else
+                {
+                    auto packet = new WorldPacket(CMSG_LOOT, sizeof(uint64));
+                    *packet << source.guid;
+                    player->GetSession()->QueuePacket(packet);
+                }
             }
         }
     }
     for (auto [guid, entry] : queryReady)
+    {
         if (Player* player = ObjectAccessor::FindPlayer(guid))
-            if (player->IsInWorld())
+        {
+            if (player->IsInWorld() && player->GetSession())
             {
-                auto packet = new WorldPacket(CMSG_ITEM_QUERY_SINGLE, sizeof(uint32));
-                *packet << entry;
-                player->GetSession()->QueuePacket(packet);
+                WorldPacket packet(CMSG_ITEM_QUERY_SINGLE, sizeof(uint32));
+                packet << entry;
+                player->GetSession()->HandleItemQuerySingleOpcode(packet);
             }
+        }
+    }
 }
 
 ItemScalingLive::Diagnostics ItemScalingLive::GetDiagnostics() const

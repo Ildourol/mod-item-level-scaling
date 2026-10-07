@@ -633,6 +633,9 @@ Commit acknowledged
 Publish into reserved native template object
         |
         v
+Synchronize metadata directly to client query handlers
+        |
+        v
 Ready for native AzerothCore loot/query/equip paths
         |
         v
@@ -658,7 +661,7 @@ Useful checks:
 - confirm the active floor/ceiling category;
 - confirm `PreserveNativeLoot` if native progression drops should remain untouched;
 - confirm floor/ceiling variance settings and scope;
-- use `.itemscaling preview` on a known item;
+- use `.itemscaling preview` on a known item (pushes live item metadata directly to the GM client);
 
 Verbose calculation logging can be enabled with:
 
