@@ -460,11 +460,15 @@ void ItemScalingLootScript::PrepareLoot(Loot* loot, LootStore const& store, Play
         if (baseProto->ScalingStatDistribution != 0 || baseProto->ScalingStatValue != 0)
             return;
 
-        // Entry-based limits/quest starters must not acquire a second identity. Conditions and
+        // Quest starters and scripted items must not acquire a second identity. Conditions and
         // multi-drop bookkeeping remain attached to this LootItem; their cloned flags stay unchanged.
-        if (baseProto->MaxCount != 0 || baseProto->StartQuest != 0 || baseProto->ScriptId != 0 ||
-            baseProto->HasFlag(ITEM_FLAG_UNIQUE_EQUIPPABLE) ||
+        if (baseProto->StartQuest != 0 || baseProto->ScriptId != 0 ||
             sDisableMgr->IsDisabledFor(DISABLE_TYPE_LOOT, item.itemid, nullptr))
+            return;
+
+        // Entry-based limits (Unique / Unique-Equipped) check
+        if (!sItemScalingConfig->ScaleUniqueItems &&
+            (baseProto->MaxCount != 0 || baseProto->HasFlag(ITEM_FLAG_UNIQUE_EQUIPPABLE)))
             return;
 
         if (!sItemScalingConfig->IsQualityEnabled(baseProto->Quality))

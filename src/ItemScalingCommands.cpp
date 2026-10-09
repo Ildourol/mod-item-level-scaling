@@ -164,9 +164,17 @@ public:
             return true;
         }
 
-        if (item->MaxCount != 0 || item->StartQuest != 0 || item->ScriptId != 0 || item->HasFlag(ITEM_FLAG_UNIQUE_EQUIPPABLE))
+        if (item->MaxCount != 0 || item->HasFlag(ITEM_FLAG_UNIQUE_EQUIPPABLE))
         {
-            handler->PSendSysMessage("|cffff8000[RESTRICTED]|r Item has MaxCount/Quest/Script/Unique-Equip flags; preserved natively on real drop.");
+            if (!sItemScalingConfig->ScaleUniqueItems)
+            {
+                handler->PSendSysMessage("|cffff8000[RESTRICTED]|r Item has MaxCount/Unique-Equip flags and ScaleUniqueItems is disabled; preserved natively on real drop.");
+            }
+        }
+
+        if (item->StartQuest != 0 || item->ScriptId != 0)
+        {
+            handler->PSendSysMessage("|cffff8000[RESTRICTED]|r Item has Quest/Script flags; preserved natively on real drop.");
         }
 
         if (!sItemScalingConfig->IsQualityEnabled(item->Quality))

@@ -169,6 +169,18 @@ ItemScaling.ScaleDown = 1
 #
 
 ItemScaling.ScaleExistingScalingItems = 0
+ 
+#
+#    ItemScaling.ScaleUniqueItems
+#        Description: Allow scaling for Unique items (MaxCount > 0) and Unique-Equipped items.
+#                     When enabled, rare weapons, rings, and trinkets from raids and dungeons
+#                     (e.g., Bloodcaller, Fang of the Faceless) will scale to the instance/player level.
+#                     Generated variants preserve the Unique and Unique-Equipped flags.
+#        Default:     1 - Enabled (Unique items scale)
+#                     0 - Disabled (Unique items drop at original unscaled level)
+#
+
+ItemScaling.ScaleUniqueItems = 1
 
 #
 #    Rarity / Quality Filters

@@ -42,6 +42,7 @@ public:
     bool ScaleUp{true};
     bool ScaleDown{true};
     bool ScaleExistingScalingItems{false};
+    bool ScaleUniqueItems{true};
 
     bool ScalePoor{true};
     bool ScaleCommon{true};

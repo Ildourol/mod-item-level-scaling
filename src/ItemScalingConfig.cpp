@@ -85,6 +85,7 @@ void ItemScalingConfig::Load(bool reload)
     ScaleUp = sConfigMgr->GetOption<bool>("ItemScaling.ScaleUp", true);
     ScaleDown = sConfigMgr->GetOption<bool>("ItemScaling.ScaleDown", true);
     ScaleExistingScalingItems = sConfigMgr->GetOption<bool>("ItemScaling.ScaleExistingScalingItems", false);
+    ScaleUniqueItems = sConfigMgr->GetOption<bool>("ItemScaling.ScaleUniqueItems", true);
 
     ScalePoor = sConfigMgr->GetOption<bool>("ItemScaling.ScalePoor", true);
     ScaleCommon = sConfigMgr->GetOption<bool>("ItemScaling.ScaleCommon", true);
