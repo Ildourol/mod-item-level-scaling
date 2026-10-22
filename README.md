@@ -5,7 +5,7 @@ Dynamic dungeon and raid equipment scaling for AzerothCore 3.3.5a.
 
 The module creates permanent scaled variants of eligible equipment using the current instance scaling target, publishes first-run variants safely into AzerothCore's native item-template store, and persists the exact generated item so the same ID and stats survive future restarts.
 
-No AzerothCore core patch, Playerbots patch, client patch, or DBC edit is required for the supported paths.
+No AzerothCore core patch, Playerbots patch, client patch, or DBC edit is required for the supported paths. However, a client patch is strongly recommended to prevent custom/scaled item icon display issues; see [Recommended client patch (item icons)](#recommended-client-patch-item-icons).
 
 ## What it does
 
@@ -570,6 +570,14 @@ ItemScaling.SyntheticEntry.Maximum = 2000000
 
 The core fast lookup vector grows according to the highest allocated item ID, so unnecessarily huge fixed starting IDs should be avoided.
 
+## Recommended client patch (item icons)
+
+For the best gameplay experience and to avoid item display issues with custom or generated scaled items, **strongly recommend patching the WoW 3.3.5a client** with [WoWPatcher335_r001 — WoW 3.3.5 Patcher (Custom Item Fix)](https://www.wowmodding.net/files/file/283-wow-335-patcher-custom-item-fix/).
+
+Without this client patch, affected items may not display their icons correctly and may appear with a **`?` (question-mark) icon** instead of the intended item icon.
+
+This is a **client-side visual compatibility recommendation**, not a requirement for installing or running the server module. Apply the patch to the client installation used to play on the server, following the patcher's instructions.
+
 ## Installation
 
 1. Clone or place this repository under AzerothCore's `modules/` directory.
@@ -652,6 +660,7 @@ Start with:
 
 Useful checks:
 
+- if custom/scaled item icons appear as `?`, apply the [recommended WoWPatcher335_r001 client patch](#recommended-client-patch-item-icons);
 - confirm the module is enabled;
 - confirm live mode and generation mode;
 - check available reserved slots;
