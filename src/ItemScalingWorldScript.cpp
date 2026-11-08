@@ -11,7 +11,7 @@
 namespace
 {
     // Stable module salt: changes to client-visible synthetic item metadata can bump this value deliberately.
-    constexpr uint32 ITEM_SCALING_CLIENT_CACHE_SALT = 0x49534C01u;
+    constexpr uint32 ITEM_SCALING_CLIENT_CACHE_SALT = 0x49534C02u;
 }
 
 ItemScalingWorldScript::ItemScalingWorldScript()

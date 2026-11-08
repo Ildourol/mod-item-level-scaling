@@ -155,6 +155,7 @@ struct ItemScalingLive::Impl
     std::unordered_set<uint32> owned;
     std::unordered_set<uint32> reserved;
     std::unordered_map<VariantKey, Request, VariantKeyHash> requests;
+    std::unordered_map<uint32, VariantKey> publishedKeys;
     std::deque<VariantKey> work;
     std::deque<VariantKey> durable;
     std::map<SourceKey, PendingLoot> sources;
@@ -876,6 +877,7 @@ void ItemScalingLive::Update(uint32 diff)
             continue;
         }
         *(*store)[entry] = request.scaled;
+        _impl->publishedKeys.emplace(entry, key);
         request.state = Impl::State::Ready;
         --_impl->pendingCount;
         _impl->reserved.erase(entry);
@@ -1045,6 +1047,16 @@ void ItemScalingLive::Update(uint32 diff)
     }
 }
 
+bool ItemScalingLive::GetVariantKey(uint32 entry, VariantKey& key) const
+{
+    std::lock_guard<std::mutex> lock(_impl->mutex);
+    auto it = _impl->publishedKeys.find(entry);
+    if (it == _impl->publishedKeys.end())
+        return false;
+    key = it->second;
+    return true;
+}
+
 ItemScalingLive::Diagnostics ItemScalingLive::GetDiagnostics() const
 {
     std::lock_guard<std::mutex> lock(_impl->mutex);
@@ -1064,6 +1076,84 @@ ItemScalingLive::Diagnostics ItemScalingLive::GetDiagnostics() const
 
 namespace
 {
+    thread_local WorldPacket const* localizedItemQuery = nullptr;
+
+    bool LocalizeItemQuery(WorldSession* session, WorldPacket const& packet, uint32 entry)
+    {
+        // The core queries item_template_locale by synthetic ID. Resolve the original
+        // item here instead, without mutating ObjectMgr's shared locale containers.
+        VariantKey key{};
+        if (!session || (!sItemScalingRegistry->GetVariantKey(entry, key) &&
+            !sItemScalingLive->GetVariantKey(entry, key)))
+            return false;
+
+        int locale = session->GetSessionDbLocaleIndex();
+        ItemLocale const* source = sObjectMgr->GetItemLocale(key.baseEntry);
+        if (locale <= LOCALE_enUS || !source || source->Name.size() <= std::size_t(locale) ||
+            source->Name[locale].empty())
+            return false; // Keep the complete English name when the translation is absent.
+
+        std::string name = source->Name[locale];
+        if (key.randomPropertyId != 0)
+        {
+            char const* suffix = nullptr;
+            auto dbcLocale = session->GetSessionDbcLocale();
+            if (key.randomPropertyId < 0)
+            {
+                auto property = sItemRandomSuffixStore.LookupEntry(static_cast<uint32>(-int64(key.randomPropertyId)));
+                if (property)
+                {
+                    suffix = property->Name[dbcLocale];
+                    if (!suffix || !*suffix)
+                        suffix = property->Name[LOCALE_enUS];
+                }
+            }
+            else
+            {
+                auto property = sItemRandomPropertiesStore.LookupEntry(static_cast<uint32>(key.randomPropertyId));
+                if (property)
+                {
+                    suffix = property->Name[dbcLocale];
+                    if (!suffix || !*suffix)
+                        suffix = property->Name[LOCALE_enUS];
+                }
+            }
+            if (!suffix || !*suffix)
+                return false; // Never discard a baked random-property name.
+            name += " ";
+            name += suffix;
+        }
+
+        // WotLK item query responses start with entry, class, subclass and
+        // SoundOverrideSubclass (4 x uint32), followed by a null-terminated name.
+        // Preserve every remaining byte, including icons, scaled stats and spells.
+        constexpr std::size_t nameOffset = 4 * sizeof(uint32);
+        if (packet.size() <= nameOffset)
+            return false;
+        auto begin = packet.contents();
+        auto end = begin + packet.size();
+        auto nameEnd = std::find(begin + nameOffset, end, uint8(0));
+        if (nameEnd == end)
+            return false;
+        WorldPacket localized(packet.GetOpcode(), packet.size() + name.size());
+        localized.append(begin, nameOffset);
+        localized << name;
+        localized.append(nameEnd + 1, std::size_t(end - nameEnd - 1));
+
+        // Send through the normal hook chain. Bypass only our replacement packet
+        // on re-entry; the original response is suppressed by the caller.
+        struct ReplacementGuard
+        {
+            WorldPacket const*& slot;
+            WorldPacket const* previous;
+            ~ReplacementGuard() { slot = previous; }
+        };
+        ReplacementGuard guard{localizedItemQuery, localizedItemQuery};
+        localizedItemQuery = &localized;
+        session->SendPacket(&localized);
+        return true;
+    }
+
     class ItemScalingLiveServerScript : public ServerScript
     {
     public:
@@ -1073,15 +1163,21 @@ namespace
         {
             return !sItemScalingLive->DeferPacket(session, packet);
         }
-        bool CanPacketSend(WorldSession* /*session*/, WorldPacket const& packet) override
+        bool CanPacketSend(WorldSession* session, WorldPacket const& packet) override
         {
+            if (&packet == localizedItemQuery)
+                return true;
             if (packet.GetOpcode() != SMSG_ITEM_QUERY_SINGLE_RESPONSE || packet.size() < sizeof(uint32))
                 return true;
             WorldPacket copy = packet;
             copy.rpos(0);
             uint32 entry;
             copy >> entry;
-            return !sItemScalingLive->IsReserved(entry & 0x7fffffffu);
+            if (sItemScalingLive->IsReserved(entry & 0x7fffffffu))
+                return false;
+            if (entry & 0x80000000u) // Native missing-item response has no name field.
+                return true;
+            return !LocalizeItemQuery(session, packet, entry);
         }
     };
 

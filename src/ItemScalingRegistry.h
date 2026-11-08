@@ -30,6 +30,7 @@ public:
     [[nodiscard]] size_t GetSyntheticEntryCount() const { return _syntheticEntries.size(); }
     [[nodiscard]] bool IsInitialized() const { return _initialized.load(std::memory_order_acquire); }
     [[nodiscard]] bool IsDbSynchronized() const { return _dbSynchronized; }
+    [[nodiscard]] bool GetVariantKey(uint32 entry, VariantKey& key) const;
     [[nodiscard]] uint32 FindExistingVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,
         uint16 targetItemLevel, uint8 formulaVersion, uint8 highestRealPlayerLevel, int32 randomPropertyId = 0) const;
 
@@ -39,6 +40,7 @@ private:
     bool ResolveSyntheticEntryRange();
 
     std::unordered_map<VariantKey, uint32, VariantKeyHash> _keyToEntry;
+    std::unordered_map<uint32, VariantKey> _entryToKey;
     std::unordered_set<uint32> _syntheticEntries;
     std::unordered_set<VariantKey, VariantKeyHash> _committedKeys;
     uint64 _nextSyntheticEntry{0};

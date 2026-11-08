@@ -26,6 +26,21 @@ When eligible loot is generated inside a supported instance, the module can:
 
 The module never modifies the original base item template. Generated variants receive their own permanent synthetic item entry.
 
+### Localized item names
+
+Scaled item names use the original item's translation for each player's session language,
+including Simplified Chinese (`zhCN`). This applies to newly generated variants and existing
+validated variants after a server restart. No configuration option or SQL migration is needed.
+The original item's translations must be installed in AzerothCore's `item_template_locale`
+table and the session must use that database locale; a Chinese client alone cannot supply
+missing server translations for synthetic item IDs.
+
+Baked random-property/suffix names use the session's DBC translation when available, with
+an English suffix fallback. If the base name has no translation, the complete English name
+is retained. This change translates item names only; item description text is unchanged.
+Scaling, item IDs and icons are unaffected. The module's client-cache salt has been updated
+so clients refresh previously cached English names on login after the server update.
+
 ## How the target level is chosen
 
 The highest eligible player level in the instance is called **H**.

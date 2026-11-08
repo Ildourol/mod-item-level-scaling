@@ -369,6 +369,7 @@ void ItemScalingRegistry::Initialize()
                 continue;
             }
             ++validated;
+            _entryToKey.emplace(entry, key);
             if (key.generatorRevision == ITEM_SCALING_GENERATOR_REVISION &&
                 key.formulaVersion == sItemScalingConfig->FormulaVersion &&
                 fields[15].Get<uint8>() == uint8(sItemScalingConfig->PreserveNonZeroStats))
@@ -391,6 +392,17 @@ void ItemScalingRegistry::Initialize()
     if (invalid || incompatible)
         LOG_WARN("module.ItemScaling", "{} committed variants withheld: key, identity, levels or inherited loot "
             "metadata failed validation. Review the data; committed rows were not changed.", invalid + incompatible);
+}
+
+bool ItemScalingRegistry::GetVariantKey(uint32 entry, VariantKey& key) const
+{
+    if (!_initialized.load(std::memory_order_acquire))
+        return false;
+    auto it = _entryToKey.find(entry);
+    if (it == _entryToKey.end())
+        return false;
+    key = it->second;
+    return true;
 }
 
 uint32 ItemScalingRegistry::FindExistingVariant(ItemTemplate const* baseProto, uint8 targetEffectiveLevel,

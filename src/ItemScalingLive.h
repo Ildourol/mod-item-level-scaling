@@ -36,6 +36,7 @@ public:
     uint32 FindOrRequest(ItemTemplate const& base, VariantKey const& key, uint8 playerLevel);
     uint32 Find(VariantKey const& key) const;
     bool IsReserved(uint32 entry) const;
+    bool GetVariantKey(uint32 entry, VariantKey& key) const;
     void BeginLoot(Loot const& loot, Player const& owner);
     void TrackLoot(Loot const& loot, Player const& owner, std::size_t index, VariantKey const& key);
     void EnterMap(Map const& map, Player* player = nullptr);
