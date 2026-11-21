@@ -223,10 +223,10 @@ ItemScaling.ScaleHeirloom = 0
 #                         are baked directly into the synthetic item_template as fixed stats, setting RandomSuffix = 0.
 #                         Displays scaled stats (+15 Stamina, etc.) in bag tooltips and chat links with NO client patches.
 #
-#        Default:     0
+#        Default:     1
 #
 
-ItemScaling.RandomSuffix.Mode = 0
+ItemScaling.RandomSuffix.Mode = 1
 
 #
 #    Pure Live Generation Architecture
