@@ -292,6 +292,10 @@ ItemScaling.Announce = 1
 
 ItemScaling.PreserveNonZeroStats = 1
 
+# Scale eligible passive on-equip bonuses to the nearest equivalent spell magnitude.
+# 0 = disabled (default), 1 = enabled. Changing this option requires a restart.
+ItemScaling.ScaleEquipSpells = 0
+
 #
 #    ItemScaling.RequiredLevel.Policy
 #        Description: Determines how RequiredLevel is assigned to scaled variants:

@@ -4,6 +4,7 @@
 
 #include "ItemScalingFormula.h"
 #include "ItemScalingConfig.h"
+#include "ItemScalingEquipSpell.h"
 #include "ItemScalingTarget.h"
 #include "DBCfmt.h"
 #include <algorithm>
@@ -673,6 +674,9 @@ namespace ItemScalingFormula
             if (!BakeRandomSuffixStats(scaledProto, baseProto, randomPropertyId, targetItemLevel, rBudget))
                 return scaledProto; // Random fields stay nonzero; validation withholds this variant.
         }
+
+        if (sItemScalingConfig->ScaleEquipSpells)
+            ItemScalingEquipSpell::Scale(scaledProto, rBudget);
 
         // Match ObjectMgr's loader, which omits zero-valued stat rows. The runtime
         // query response and the next startup must expose the same compact stat array.

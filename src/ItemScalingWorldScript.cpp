@@ -4,6 +4,7 @@
 
 #include "ItemScalingWorldScript.h"
 #include "ItemScalingConfig.h"
+#include "ItemScalingEquipSpell.h"
 #include "ItemScalingRegistry.h"
 #include "ItemScalingLive.h"
 #include "Log.h"
@@ -47,6 +48,9 @@ void ItemScalingWorldScript::OnBeforeWorldInitialized()
         LOG_INFO("server.loading", ">> Mod-Item-Level-Scaling is disabled in configuration.");
         return;
     }
+
+    if (sItemScalingConfig->ScaleEquipSpells)
+        ItemScalingEquipSpell::Initialize();
 
     // Validate core-loaded templates and establish the live pool before gameplay.
     sItemScalingRegistry->Initialize();

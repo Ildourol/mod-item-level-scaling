@@ -407,6 +407,19 @@ Supported stat and resistance bonuses are baked into the synthetic template as f
 
 If the rolled enchantment cannot be represented safely, DBC data is missing, integer bounds would be exceeded, or the item has too many resulting stats, the original item is retained rather than silently losing bonuses.
 
+## On-equip spell scaling
+
+Set `ItemScaling.ScaleEquipSpells = 1` and restart to enable scaling for supported
+passive on-equip bonuses. The module picks the closest matching spell magnitude
+using the same budget ratio as item stats. Supported effects include flat stats,
+resistance, attack power, rating, healing and spell damage when an equivalent
+spell exists. Proc, on-use and unsupported effects keep their original spell IDs.
+`.mils preview` lists any spell ID substitutions.
+
+Enabled mode uses a distinct generator revision for new drops. Existing issued
+items retain their saved spell IDs, and disabling the option resumes reuse of the
+original revision's variants. No SQL migration is required.
+
 ## Required level
 
 Scaled item required level is configurable:

@@ -33,19 +33,22 @@ void ItemScalingConfig::Load(bool reload)
         uint8 newFormula = static_cast<uint8>(std::clamp<uint32>(
             sConfigMgr->GetOption<uint32>("ItemScaling.FormulaVersion", 1), 1, 255));
         bool newPreserve = sConfigMgr->GetOption<bool>("ItemScaling.PreserveNonZeroStats", true);
+        bool newScaleEquipSpells = sConfigMgr->GetOption<bool>("ItemScaling.ScaleEquipSpells", false);
         uint32 newRandomMode = sConfigMgr->GetOption<uint32>("ItemScaling.RandomSuffix.Mode", 0);
         RandomSuffixScalingMode expectedRandomMode = (newRandomMode == 1) ? RandomSuffixScalingMode::Bake : RandomSuffixScalingMode::Skip;
 
-        if (newFormula != FormulaVersion || newPreserve != PreserveNonZeroStats || expectedRandomMode != RandomSuffixMode)
+        if (newFormula != FormulaVersion || newPreserve != PreserveNonZeroStats ||
+            newScaleEquipSpells != ScaleEquipSpells || expectedRandomMode != RandomSuffixMode)
         {
             LOG_WARN("module.ItemScaling",
-                "ItemScaling: Schema invariant options (FormulaVersion, PreserveNonZeroStats, RandomSuffix.Mode) "
+                "ItemScaling: Schema invariant options (FormulaVersion, PreserveNonZeroStats, ScaleEquipSpells, RandomSuffix.Mode) "
                 "cannot be changed live and require a worldserver restart. Current persistent invariants remain active.");
         }
     }
     else
     {
         PreserveNonZeroStats = sConfigMgr->GetOption<bool>("ItemScaling.PreserveNonZeroStats", true);
+        ScaleEquipSpells = sConfigMgr->GetOption<bool>("ItemScaling.ScaleEquipSpells", false);
         uint32 randomModeVal = sConfigMgr->GetOption<uint32>("ItemScaling.RandomSuffix.Mode", 0);
         RandomSuffixMode = (randomModeVal == 1) ? RandomSuffixScalingMode::Bake : RandomSuffixScalingMode::Skip;
     }

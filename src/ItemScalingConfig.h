@@ -56,6 +56,12 @@ public:
     RandomSuffixScalingMode RandomSuffixMode{RandomSuffixScalingMode::Skip};
 
     bool PreserveNonZeroStats{true};
+    bool ScaleEquipSpells{false};
+
+    uint8 GetGeneratorRevision() const
+    {
+        return ScaleEquipSpells ? ITEM_SCALING_EQUIP_SPELL_REVISION : ITEM_SCALING_GENERATOR_REVISION;
+    }
     RequiredLevelPolicy ReqLevelPolicy{REQ_POLICY_TARGET};
 
     uint8 DynamicFloorDungeons{3};

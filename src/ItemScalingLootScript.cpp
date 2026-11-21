@@ -614,7 +614,7 @@ void ItemScalingLootScript::PrepareLoot(Loot* loot, LootStore const& store, Play
         if (variantEntry == 0 && !prewarm)
         {
             VariantKey key{baseProto->ItemId, effectiveTarget, targetIlvl, sItemScalingConfig->FormulaVersion,
-                ITEM_SCALING_GENERATOR_REVISION,
+                sItemScalingConfig->GetGeneratorRevision(),
                 ItemScalingFormula::CalculateRequiredLevel(baseProto, effectiveTarget, highestRealPlayerLevel), randomPropId};
             sItemScalingLive->TrackLoot(*loot, *lootOwner, static_cast<std::size_t>(&item - loot->items.data()), key);
         }

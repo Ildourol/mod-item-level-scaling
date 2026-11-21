@@ -119,7 +119,7 @@ public:
         handler->PSendSysMessage("RealPlayersOnly: {}, IncludeGameMasters: {}", sItemScalingConfig->RealPlayersOnly ? "Yes" : "No", sItemScalingConfig->IncludeGameMasters ? "Yes" : "No");
         handler->PSendSysMessage("RequiredLevel Policy: {}", GetPolicyName(sItemScalingConfig->ReqLevelPolicy));
         handler->PSendSysMessage("RandomSuffix Mode: {} (0=Skip, 1=Bake)", static_cast<uint32>(sItemScalingConfig->RandomSuffixMode));
-        handler->PSendSysMessage("Formula Version: {}, Generator Revision: {}", sItemScalingConfig->FormulaVersion, ITEM_SCALING_GENERATOR_REVISION);
+        handler->PSendSysMessage("Formula Version: {}, Generator Revision: {}", sItemScalingConfig->FormulaVersion, sItemScalingConfig->GetGeneratorRevision());
         handler->PSendSysMessage("Database Synchronized: {}", sItemScalingRegistry->IsDbSynchronized() ? "|cff00ff00YES|r" : "|cffff0000NO|r");
         handler->PSendSysMessage("Registry Initialized: {}", sItemScalingRegistry->IsInitialized() ? "|cff00ff00YES|r" : "|cffff0000NO|r");
         handler->PSendSysMessage("In-Memory Scaled Variants: |cff00ff00{}|r", sItemScalingRegistry->GetIndexedVariantCount());
@@ -242,6 +242,10 @@ public:
         {
             handler->PSendSysMessage("Synthetic Variant Status: |cffff0000Not indexed (live generation disabled; persisted-only mode)|r");
         }
+
+        for (uint32 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
+            if (item->Spells[i].SpellId != scaledProto.Spells[i].SpellId)
+                handler->PSendSysMessage("Equip spell: {} -> {}", item->Spells[i].SpellId, scaledProto.Spells[i].SpellId);
 
         // Armor
         if (item->Armor > 0 || scaledProto.Armor > 0)

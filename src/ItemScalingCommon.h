@@ -37,6 +37,7 @@ enum class RandomSuffixScalingMode : uint8
 // Revision 2 adds checked random-stat baking and durable runtime snapshots.
 // Issued revision-1 items retain their templates and values.
 inline constexpr uint8 ITEM_SCALING_GENERATOR_REVISION = 2;
+inline constexpr uint8 ITEM_SCALING_EQUIP_SPELL_REVISION = 3;
 
 struct VariantKey
 {

@@ -285,11 +285,11 @@ void ItemScalingRegistry::OnLoadCustomDatabaseTable()
     }
     LOG_INFO("server.loading",
         "ItemScaling: formula version {}, generator revision {}, target levels {}-{}, bracket {}.",
-        sItemScalingConfig->FormulaVersion, ITEM_SCALING_GENERATOR_REVISION,
+        sItemScalingConfig->FormulaVersion, sItemScalingConfig->GetGeneratorRevision(),
         sItemScalingConfig->MinLevel, sItemScalingConfig->MaxLevel, sItemScalingConfig->BracketStep);
     QueryResult family = WorldDatabase.Query(
         "SELECT COUNT(*) FROM scaled_item_variant WHERE generator_revision={} AND formula_version={} "
-        "AND preserve_nonzero_stats<>{}", ITEM_SCALING_GENERATOR_REVISION,
+        "AND preserve_nonzero_stats<>{}", sItemScalingConfig->GetGeneratorRevision(),
         sItemScalingConfig->FormulaVersion, uint32(sItemScalingConfig->PreserveNonZeroStats));
     if (!family)
         return;
@@ -363,14 +363,15 @@ void ItemScalingRegistry::Initialize()
                 ++invalid;
                 continue;
             }
-            if (!ItemScalingIdentity::CompatibleLootMetadata(*base, *persisted, key.randomPropertyId != 0))
+            if (!ItemScalingIdentity::CompatibleLootMetadata(*base, *persisted, key.randomPropertyId != 0,
+                key.generatorRevision == ITEM_SCALING_EQUIP_SPELL_REVISION))
             {
                 ++incompatible;
                 continue;
             }
             ++validated;
             _entryToKey.emplace(entry, key);
-            if (key.generatorRevision == ITEM_SCALING_GENERATOR_REVISION &&
+            if (key.generatorRevision == sItemScalingConfig->GetGeneratorRevision() &&
                 key.formulaVersion == sItemScalingConfig->FormulaVersion &&
                 fields[15].Get<uint8>() == uint8(sItemScalingConfig->PreserveNonZeroStats))
                 _keyToEntry.emplace(key, entry);
@@ -412,7 +413,7 @@ uint32 ItemScalingRegistry::FindExistingVariant(ItemTemplate const* baseProto, u
         return 0;
     uint8 required = ItemScalingFormula::CalculateRequiredLevel(baseProto, targetEffectiveLevel, highestRealPlayerLevel);
     VariantKey key{baseProto->ItemId, targetEffectiveLevel, targetItemLevel, formulaVersion,
-        ITEM_SCALING_GENERATOR_REVISION, required, randomPropertyId};
+        sItemScalingConfig->GetGeneratorRevision(), required, randomPropertyId};
     auto it = _keyToEntry.find(key);
     if (it != _keyToEntry.end())
         return it->second;
@@ -429,7 +430,7 @@ uint32 ItemScalingRegistry::FindOrRequestVariant(ItemTemplate const* baseProto, 
         return 0;
     uint8 required = ItemScalingFormula::CalculateRequiredLevel(baseProto, targetEffectiveLevel, highestRealPlayerLevel);
     VariantKey key{baseProto->ItemId, targetEffectiveLevel, targetItemLevel, formulaVersion,
-        ITEM_SCALING_GENERATOR_REVISION, required, randomPropertyId};
+        sItemScalingConfig->GetGeneratorRevision(), required, randomPropertyId};
     auto it = _keyToEntry.find(key);
     if (it != _keyToEntry.end())
         return it->second;

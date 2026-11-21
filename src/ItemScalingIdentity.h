@@ -6,6 +6,7 @@
 #define _ITEM_SCALING_IDENTITY_H
 
 #include "ItemScalingCommon.h"
+#include "ItemScalingEquipSpell.h"
 
 // Seven DBC-enforced identity fields. SQL widths match item_template, including signed tinyints.
 struct ItemScalingIdentity
@@ -39,7 +40,7 @@ struct ItemScalingIdentity
     }
 
     // Synthetic IDs skip core DBC validation. Withhold rows whose inherited loot semantics differ.
-    static bool CompatibleLootMetadata(ItemTemplate const& base, ItemTemplate const& variant, bool baked = false)
+    static bool CompatibleLootMetadata(ItemTemplate const& base, ItemTemplate const& variant, bool baked, bool scaleEquipSpells)
     {
         if (base.Quality != variant.Quality || base.Flags != variant.Flags || base.Flags2 != variant.Flags2 || base.FlagsCu != variant.FlagsCu ||
             base.MaxCount != variant.MaxCount || base.ItemLimitCategory != variant.ItemLimitCategory ||
@@ -51,8 +52,15 @@ struct ItemScalingIdentity
             (base.RandomProperty != variant.RandomProperty || base.RandomSuffix != variant.RandomSuffix))
             return false;
         for (uint32 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
-            if (base.Spells[i].SpellId != variant.Spells[i].SpellId)
+        {
+            auto const& original = base.Spells[i];
+            auto const& persisted = variant.Spells[i];
+            if (original.SpellId != persisted.SpellId &&
+                !(scaleEquipSpells && original.SpellTrigger == ITEM_SPELLTRIGGER_ON_EQUIP &&
+                    persisted.SpellTrigger == original.SpellTrigger &&
+                    ItemScalingEquipSpell::IsEquivalent(original.SpellId, persisted.SpellId)))
                 return false;
+        }
         return true;
     }
 
